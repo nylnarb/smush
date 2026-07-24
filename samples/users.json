@@ -1,0 +1,12 @@
+[
+  {"id": 1, "name": "Ada Lovelace", "email": "ada@example.com", "active": true, "role": "admin"},
+  {"id": 2, "name": "Alan Turing", "email": "alan@example.com", "active": true, "role": "engineer"},
+  {"id": 3, "name": "Grace Hopper", "email": "grace@example.com", "active": false, "role": "engineer"},
+  {"id": 4, "name": "Margaret Hamilton", "email": "margaret@example.com", "active": true, "role": "engineer"},
+  {"id": 5, "name": "Katherine Johnson", "email": "katherine@example.com", "active": true, "role": "analyst"},
+  {"id": 6, "name": "Radia Perlman", "email": "radia@example.com", "active": true, "role": "engineer"},
+  {"id": 7, "name": "Barbara Liskov", "email": "barbara@example.com", "active": false, "role": "engineer"},
+  {"id": 8, "name": "Frances Allen", "email": "frances@example.com", "active": true, "role": "engineer"},
+  {"id": 9, "name": "Shafi Goldwasser", "email": "shafi@example.com", "active": true, "role": "researcher"},
+  {"id": 10, "name": "Adele Goldberg", "email": "adele@example.com", "active": true, "role": "engineer"}
+]

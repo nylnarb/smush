@@ -1,0 +1,12 @@
+total 96
+drwxr-xr-x  8 alice staff   256 Jul 24 17:43 .
+drwxr-xr-x 21 alice staff   672 Jul 22 09:11 ..
+-rw-r--r--  1 alice staff    39 Jul 18 14:02 .gitignore
+-rw-r--r--  1 alice staff 17512 Jul 24 17:40 README.md
+-rw-r--r--  1 alice staff  4096 Jul 24 11:27 NEXT_SESSION_PROMPTS.txt
+drwxr-xr-x  9 alice staff   288 Jul 24 17:43 ltc
+-rw-r--r--  1 alice staff 12288 Jul 24 17:43 ltc_stats.db
+drwxr-xr-x  5 alice staff   160 Jul 24 16:02 samples
+drwxr-xr-x  4 alice staff   128 Jul 20 08:55 scripts
+drwxr-xr-x  9 alice staff   288 Jul 24 17:12 tests
+-rw-r--r--  1 alice staff   100 Jul 19 13:31 settings.local.json

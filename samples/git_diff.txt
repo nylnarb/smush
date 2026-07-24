@@ -1,0 +1,40 @@
+diff --git a/ltc/core.py b/ltc/core.py
+index 3f2a1b9..9c4d2e7 100644
+--- a/ltc/core.py
++++ b/ltc/core.py
+@@ -33,10 +33,14 @@ from .compressors import listing_compressor
+ # Content types a caller may request. "auto" sniffs; others map to a compressor.
+ SUPPORTED_TYPES = ("auto", "json", "log", "listing", "generic")
+
+
+ def _sniff(content: str) -> str:
+     """Best-effort content-type detection. Cheap and side-effect free."""
+     stripped = content.lstrip()
+     if stripped[:1] in ("{", "["):
+         try:
+             json.loads(content)
+             return "json"
+-        except ValueError:
++        except ValueError:  # not JSON after all
+             pass
++    if _looks_like_pytest(content):
++        return "pytest"
++    if _looks_like_git(content):
++        return "git"
+     if _looks_like_listing(content):
+         return "listing"
+     if _looks_like_log(content):
+         return "log"
+     return "identity"
+diff --git a/ltc/result.py b/ltc/result.py
+index 8a1c0d3..b2e5f61 100644
+--- a/ltc/result.py
++++ b/ltc/result.py
+@@ -36,6 +36,7 @@ class CompressResult:
+     compressed: str
+     metadata: Dict[str, Any]
+     original_tokens: int
+     compressed_tokens: int
+     compressor: str
+     reversible: bool = True
++    dropped: List[str] = field(default_factory=list)

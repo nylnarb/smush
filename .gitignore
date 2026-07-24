@@ -1,0 +1,24 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Local savings ledger. NEVER commit this: the `command` column stores every
+# Bash command ltc compressed, verbatim, including absolute paths and anything
+# else that appeared on the command line. On a work machine that is the
+# employer's information, and publishing it is the one way this repo could leak
+# something it has no right to.
+ltc_stats.db
+*.ltc_stats.db
+
+# Per-call metadata sidecars written by `ltc compress`
+*.ltc.meta.json
+
+# Local Claude Code settings (machine-specific paths and permissions)
+.claude/settings.local.json
+
+# Virtualenvs / build
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
