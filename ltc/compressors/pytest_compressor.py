@@ -161,6 +161,7 @@ def compress(text: str) -> CompressResult:
     progress_dropped = 0
     passing_dropped = 0
     header_dropped = 0
+    blank_dropped = 0
     blank_run = 0
 
     for line in lines:
@@ -207,6 +208,7 @@ def compress(text: str) -> CompressResult:
             # Collapse blank-line padding between kept blocks to at most one.
             blank_run += 1
             if blank_run > 1:
+                blank_dropped += 1
                 continue
         else:
             blank_run = 0
@@ -223,6 +225,13 @@ def compress(text: str) -> CompressResult:
         dropped.append(f"{header_dropped} session/warning header line(s)")
     if folded_frames:
         dropped.append(f"{folded_frames} library stack frame(s)")
+    # Counted last and listed last because it is the least interesting loss —
+    # but it must be counted. Blank-line collapsing alone can shrink a payload
+    # (a `unittest -v` run hits exactly this path), and a lossy result with an
+    # empty `dropped` list would leave the footer saying "dropped unspecified",
+    # defeating the one mechanism that makes lossy compression safe.
+    if blank_dropped:
+        dropped.append(f"{blank_dropped} blank line(s)")
 
     compressed = "".join(out)
     if not dropped and compressed == text:

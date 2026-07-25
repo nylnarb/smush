@@ -98,5 +98,81 @@ class CliRoundTripTests(unittest.TestCase):
             cli.main([])
 
 
+PYTEST_RUN = """============================= test session starts ==============================
+collected 3 items
+
+tests/test_a.py ..F                                                      [100%]
+
+=================================== FAILURES ===================================
+_________________________________ test_broken __________________________________
+
+    def test_broken():
+>       assert 1 == 2
+E       assert 1 == 2
+
+tests/test_a.py:9: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_a.py::test_broken - assert 1 == 2
+========================= 1 failed, 2 passed in 0.04s ==========================
+"""
+
+
+class LossyFooterTests(unittest.TestCase):
+    """The footer is the only safety mechanism for lossy auto-compression."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+
+    def _path(self, name: str) -> str:
+        return os.path.join(self.tmpdir, name)
+
+    def _compress(self, content: str, *extra) -> str:
+        in_path = self._path("in.txt")
+        with open(in_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = cli.main(["compress", in_path,
+                           "--meta-out", self._path("meta.json"), *extra])
+        self.assertEqual(rc, 0)
+        return out.getvalue()
+
+    def test_lossy_result_gets_a_footer_naming_what_was_dropped(self):
+        out = self._compress(PYTEST_RUN, "--footer-when-lossy")
+        footer = out.strip().splitlines()[-1]
+        self.assertTrue(footer.startswith("[ltc pytest -"), footer)
+        self.assertIn("dropped", footer)
+        self.assertTrue(footer.endswith("]"), footer)
+
+    def test_footer_never_swallows_the_failure_it_summarizes(self):
+        # A footer that replaced content instead of annotating it would be
+        # far worse than no footer at all.
+        out = self._compress(PYTEST_RUN, "--footer-when-lossy")
+        self.assertIn("test_broken", out)
+
+    def test_reversible_result_gets_no_footer(self):
+        out = self._compress(json.dumps([{"a": 1}, {"a": 2}, {"a": 3}]),
+                             "--footer-when-lossy")
+        self.assertNotIn("[ltc ", out)
+
+    def test_footer_is_opt_in(self):
+        self.assertNotIn("[ltc ", self._compress(PYTEST_RUN))
+
+    def test_footer_starts_on_its_own_line(self):
+        # Without the newline guard the footer would be glued to the last
+        # line of real output, corrupting it.
+        out = self._compress(PYTEST_RUN.rstrip("\n"), "--footer-when-lossy")
+        lines = out.splitlines()
+        self.assertTrue(lines[-1].startswith("[ltc "))
+        self.assertEqual(1, sum(1 for ln in lines if ln.startswith("[ltc ")))
+
+    def test_footer_helper_is_pure_and_returns_none_when_reversible(self):
+        from ltc import compress_payload
+        reversible = compress_payload('[{"a": 1}, {"a": 2}]')
+        self.assertIsNone(cli.lossy_footer(reversible))
+        lossy = compress_payload(PYTEST_RUN)
+        self.assertIsNotNone(cli.lossy_footer(lossy))
+
+
 if __name__ == "__main__":
     unittest.main()

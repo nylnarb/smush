@@ -56,5 +56,49 @@ class HarnessSampleTests(unittest.TestCase):
         self.assertNotEqual(rc, 0)
 
 
+class LossyContractTests(unittest.TestCase):
+    """A lossy result must always name what it dropped.
+
+    This is the invariant the whole lossy design rests on (see README, "Key
+    idea"): reversibility is traded away *in exchange for* an explicit list.
+    A codec that returns reversible=False with an empty `dropped` has taken
+    the trade without paying for it, and the CLI footer degrades to the
+    useless "dropped unspecified". Asserted across every registered codec so a
+    codec added later cannot quietly reintroduce the hole.
+    """
+
+    def _samples(self):
+        d = os.path.join(os.path.dirname(os.path.dirname(__file__)), "samples")
+        for name in sorted(os.listdir(d)):
+            if not name.endswith(".cmd"):
+                yield os.path.join(d, name)
+
+    def test_every_lossy_sample_names_what_it_dropped(self):
+        from ltc import compress_payload
+        seen_lossy = 0
+        for path in self._samples():
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read()
+            result = compress_payload(content)
+            if result.lossy:
+                seen_lossy += 1
+                self.assertTrue(result.dropped,
+                                f"{os.path.basename(path)} is lossy "
+                                f"({result.compressor}) but dropped is empty")
+        self.assertGreater(seen_lossy, 0, "no lossy samples — test proves nothing")
+
+    def test_blank_line_only_collapse_still_names_its_loss(self):
+        # The case that caught this: `unittest -v` output where the pytest
+        # codec finds no progress lines or passing names to drop, and only
+        # blank-line padding collapses.
+        from ltc.compressors import pytest_compressor
+        text = "Ran 12 tests in 0.4s\n\n\n\nOK\n"
+        result = pytest_compressor.compress(text)
+        if result.lossy:
+            self.assertTrue(result.dropped)
+            self.assertTrue(any("blank" in d for d in result.dropped),
+                            result.dropped)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -46,6 +46,10 @@ def build_parser() -> argparse.ArgumentParser:
                              help="Content type (default: auto-detect).")
     compress_p.add_argument("--stats", action="store_true",
                              help="Print before/after token stats to stderr.")
+    compress_p.add_argument("--footer-when-lossy", action="store_true",
+                             help="Append one line to stdout naming what was "
+                                  "discarded, but ONLY when the result is "
+                                  "lossy. Silent for reversible results.")
     compress_p.add_argument("--meta-out", default=None,
                              help="Where to write the metadata sidecar JSON "
                                   "(default: <file>.ltc.meta.json).")
@@ -88,6 +92,27 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def lossy_footer(result) -> Optional[str]:
+    """One line naming what a lossy result discarded, or None if reversible.
+
+    This is the whole safety mechanism for lossy codecs in the auto-compress
+    path: metadata sidecars are overwritten on every call, so nothing is
+    reversible in practice there, and a reader's only protection is being told
+    what is missing. It therefore goes to **stdout**, not stderr — the point is
+    that it lands in the same text the model reads, right under the output it
+    describes.
+
+    Reversible results get no footer at all. A line on every command would be
+    noise that costs tokens on the far more common case, and would train a
+    reader to skip exactly the line that matters.
+    """
+    if not result.lossy:
+        return None
+    dropped = "; ".join(result.dropped) if result.dropped else "unspecified"
+    return (f"[ltc {result.compressor} -{result.reduction:.0%} "
+            f"| dropped {dropped}]")
+
+
 def _run_compress(args: argparse.Namespace) -> int:
     content = _read_input(args.file)
     result = compress_payload(content, args.type, command=args.source_command)
@@ -97,6 +122,17 @@ def _run_compress(args: argparse.Namespace) -> int:
         json.dump(result.metadata, f, indent=2)
 
     sys.stdout.write(result.compressed)
+
+    if args.footer_when_lossy:
+        footer = lossy_footer(result)
+        if footer is not None:
+            # Guard the newline rather than always emitting one: a compressed
+            # payload that already ends in "\n" would otherwise gain a blank
+            # line, and one that doesn't would have the footer glued to its
+            # last line of real output.
+            if result.compressed and not result.compressed.endswith("\n"):
+                sys.stdout.write("\n")
+            sys.stdout.write(footer + "\n")
 
     if args.log_stats:
         stats_store.record(args.log_stats, result, session_id=args.session_id,
