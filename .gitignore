@@ -37,3 +37,6 @@ venv/
 build/
 dist/
 *.egg-info/
+
+# Scratch worktrees created by background agents
+.claude/worktrees/
