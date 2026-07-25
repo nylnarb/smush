@@ -21,6 +21,16 @@ The vendored files contain **no absolute machine paths** — they derive
 everything from `$HOME` / `~` and accept environment-variable overrides. That is
 deliberate: this repository is public.
 
+Two hooks, on two different events, behind two independent switches:
+
+| hook | event | tool | switch file | default |
+|---|---|---|---|---|
+| `ltc-auto-compress.py` | `PreToolUse` | `Bash` | `.compress_mode` (`ltc`/`rtk`/`off`) | `rtk` |
+| `ltc-read-compress.py` | `PostToolUse` | `Read` | `.compress_mode_read` (`on`/`off`) | `off` |
+
+They are complementary, not alternatives — Bash output is ~20% of a session's
+context and `Read` output ~37%, so the useful configuration usually runs both.
+
 ---
 
 ## Contents
@@ -74,6 +84,68 @@ subprocess call *inside* the dispatcher rather than as a second registration.
 The rule is **per event**, not global. A `PostToolUse` hook alongside this
 `PreToolUse` one is fine; two `PreToolUse` hooks that both rewrite input are not.
 
+### `hooks/ltc-read-compress.py`
+
+A `PostToolUse` hook on `Read`, gated by its own switch file
+`<CLAUDE_HOME>/.compress_mode_read` (`on` / `off`, default `off`).
+
+`Read` output is roughly **37%** of a session's context — nearly twice what
+Bash output is — and it was unreachable from hook-land until Claude Code
+2.1.220 added `updatedToolOutput` to the `PostToolUse` schema ("Replaces the
+tool output before it is sent to the model"). This hook is the thing that
+reaches it. Verified live: a `Read` of a 9.7k-char grep capture came back as
+`listing`-compressed text with an ltc footer instead of the raw file.
+
+**Separate switch on purpose.** `.compress_mode` governs Bash, where `ltc` and
+`rtk` are alternatives. rtk has no `Read` equivalent at all, so folding Read
+compression into that switch would mean giving up rtk's Bash rewriting purely
+to reach Read. Two switches let both run at once, which is the configuration
+that actually saves the most.
+
+#### The line-number hazard, which shapes every gate in the file
+
+`tool_response["file"]["content"]` is the **raw file text**. Claude Code applies
+the `N→` line-number prefixes *downstream*, after the hook. So compressing the
+content does not renumber a numbered document — it renumbers a *different*
+document, and line 40 of the compressed text is not line 40 of the file on
+disk.
+
+For a log or a data dump nobody minds. For source code the model is about to
+edit, every `file.py:120` it reports is wrong and every `Edit` it attempts
+quotes text that is not in the file. That is a correctness bug wearing a
+saved-token costume. Hence three gates:
+
+- **Source files are skipped and only *shadow-measured*** — compressed, the
+  saving written to the log, the result thrown away. That yields an honest
+  ceiling for what full coverage would be worth without betting an edit on it.
+  Markdown counts as source here: prose gets edited by quoting a line back
+  exactly the way code does.
+- **Lossy results are refused outright**, whatever the file type. The `git` and
+  `pytest` codecs are the high-scoring ones and they are both lossy, so this
+  gate costs real savings — deliberately. Losing a line of a file the model is
+  reasoning about is never a good trade.
+- **Under 2,000 characters, nothing happens.** Below that the wrapping costs
+  more than any codec wins back.
+
+Compressed output always carries a footer naming the codec, the token counts,
+and an explicit warning that the line numbers are positions in the compressed
+text.
+
+#### The failure mode that looks like success
+
+The replacement is validated against `Read`'s own `outputSchema` and must also
+survive `mapToolResultToToolResultBlockParam`. Fail either and Claude Code
+**silently reverts** to the original output, logging
+`hook_error_during_execution: "does not match Read's output shape; using
+original output."` The symptom of getting it wrong is therefore *zero
+compression* — indistinguishable from a codec that underperformed.
+
+The defence is not to reconstruct the schema but to **mutate the object the
+hook was handed**: copy `tool_response`, replace `content`, fix `numLines`,
+send it back. That cannot drift from whatever shape the running version
+expects. Never assert success from "the session still worked" — assert it from
+compressed text actually arriving.
+
 ### `commands/*.md`
 
 Claude Code slash commands. Each is a markdown file whose name is the command
@@ -111,6 +183,7 @@ name; the YAML front matter's `description` is what shows in the picker.
    ```bash
    mkdir -p ~/.claude/hooks
    cp <LTC_REPO>/integration/hooks/ltc-auto-compress.py ~/.claude/hooks/
+   cp <LTC_REPO>/integration/hooks/ltc-read-compress.py ~/.claude/hooks/
    ```
 
 3. **Copy the slash commands** into `<CLAUDE_HOME>/commands/`:
@@ -138,18 +211,42 @@ name; the YAML front matter's `description` is what shows in the picker.
              }
            ]
          }
+       ],
+       "PostToolUse": [
+         {
+           "matcher": "Read",
+           "hooks": [
+             {
+               "type": "command",
+               "command": "\"<PYTHON>\" \"<CLAUDE_HOME>/hooks/ltc-read-compress.py\"",
+               "timeout": 15
+             }
+           ]
+         }
        ]
      }
    }
    ```
 
-   **Make sure this is the only entry under `PreToolUse` with `"matcher": "Bash"`
-   that rewrites the command.** See "Why exactly ONE hook per event" above. If
-   you already have rtk's hook registered, remove that registration — the
-   dispatcher calls it for you in `rtk` mode.
+   Both entries are safe together: the one-hook-per-event rule is per event,
+   and these are on different events. Hook changes take effect immediately —
+   no session restart needed, which was verified rather than assumed.
 
-5. **Set the mode.** The hook defaults to `rtk` when the file is absent, so to
-   actually use ltc:
+5. **Turn on Read compression** (off by default, and independent of the Bash
+   mode):
+
+   ```bash
+   echo on > ~/.claude/.compress_mode_read
+   ```
+
+   **Make sure the `PreToolUse` entry is the only one with `"matcher": "Bash"`
+   that rewrites the command, and that `PostToolUse` has only the one entry.**
+   See "Why exactly ONE hook per event" above. If you already have rtk's hook
+   registered, remove that registration — the dispatcher calls it for you in
+   `rtk` mode.
+
+6. **Set the Bash mode.** The hook defaults to `rtk` when the file is absent,
+   so to actually use ltc for Bash:
 
    ```bash
    printf 'ltc\n' > ~/.claude/.compress_mode
@@ -157,7 +254,7 @@ name; the YAML front matter's `description` is what shows in the picker.
 
    or just run `/ltc-on` in a session. Verify with `/compress-status`.
 
-6. **Optional environment overrides.** If your layout differs from the defaults,
+7. **Optional environment overrides.** If your layout differs from the defaults,
    set any of these (in `settings.json`'s `env` block, or in the shell):
 
    | var | default | purpose |
@@ -177,6 +274,14 @@ name; the YAML front matter's `description` is what shows in the picker.
   `LTC | <command>` (wrapped) or `passthrough: skipped (…)`. A log dominated by
   `skipped` lines is the first thing to check when savings look low.
 - `/ltc-gain` should show non-zero rows once a few commands have run.
+- For the Read hook, `Read` a file over 2,000 characters that is **not** source
+  (a `.txt` log or a `.json` dump), then check
+  `<CLAUDE_HOME>/hooks/ltc-read-compress.log`. Lines read `APPLIED | …`,
+  `SHADOW (source, not applied) | …`, `skip: REFUSED lossy | …`, or
+  `skip: no gain | …`.
+  Do not infer success from the session still working — a shape mismatch
+  reverts silently. Success is compressed text with an `[ltc: …]` footer
+  actually arriving in the transcript.
 
 ## Notes
 
