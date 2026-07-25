@@ -37,6 +37,12 @@ _REGISTRY: Dict[str, Tuple[Callable[[str], CompressResult],
 # Content types a caller may request. "auto" sniffs; others map to a compressor.
 SUPPORTED_TYPES = ("auto", "json", "log", "listing", "generic", "pytest", "git")
 
+# Compressors that want the originating command itself, not just the content
+# type derived from it. Only the listing codec does: it drops noise directories,
+# and whether that is compression or a wrong answer depends on whether the user
+# asked for those directories by name. Everything else is decided by the bytes.
+_COMMAND_AWARE = frozenset({listing_compressor.NAME})
+
 # --- sniffing thresholds (single place to tune detection) -------------------
 # Fraction of lines that must look path-shaped for "listing" to win.
 _LISTING_MAJORITY = 0.7
@@ -229,6 +235,11 @@ def compress_payload(content: str, content_type: str = "auto",
             reversible=True,
         )
     compress_fn, _ = entry
+    if resolved in _COMMAND_AWARE:
+        # Passed even when content_type was explicit: an explicit type says
+        # *which* codec, never *what the user asked for*, and the second is
+        # what gates discarding.
+        return compress_fn(content, command=command)
     return compress_fn(content)
 
 

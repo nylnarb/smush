@@ -27,7 +27,16 @@ self-contained). Two transforms are applied, in order:
    required so decompress can prepend the prefix unconditionally rather than
    needing a per-line marker.
 
-3. Long-format column elision (**lossy**, and the only lossy transform here).
+3. Noise-directory dropping (**lossy**). Entries under ``.git/``,
+   ``__pycache__/``, ``node_modules/`` and friends are, on a listing command,
+   almost never the answer — they are the reason a recursive listing is large.
+   Dropping them is the single biggest lever this codec has, and it is not
+   compression at all: it is a judgement that those lines are not information.
+   Because it is a judgement it is gated three ways — see ``_active_noise_dirs``
+   — and every drop is counted, named in ``dropped``, and announced by a marker
+   line in the output itself.
+
+4. Long-format column elision (**lossy**, and the only other lossy transform).
    ``ls -l`` spends most of every line on a link count, owner, group, byte size
    and timestamp. When a majority of lines have that exact shape, those columns
    are dropped and only the mode and the name survive. Unlike the two
@@ -50,7 +59,7 @@ columns are gone for good — which is why ``compress`` marks such a result
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Tuple
 
 from ..result import CompressResult
 from ..tokens import estimate_tokens
@@ -69,6 +78,26 @@ _MIN_GROUP_LINES = 3
 _SEPARATORS = ("/", "\\")
 # Fraction of lines that must be long-format before column elision engages.
 _LONG_FORMAT_MAJORITY = 0.7
+
+# Directories whose contents are noise on a listing command: build artifacts,
+# vendored dependencies, caches, and version-control internals. Deliberately a
+# short, boring list — every name added here is a name whose contents a user can
+# no longer see without asking for it explicitly.
+_NOISE_DIRS = (
+    ".git", "__pycache__", "node_modules", ".venv", "corpus",
+    "dist", "build", ".mypy_cache", ".pytest_cache",
+)
+
+# Commands whose output is already a curated set, where "noise" is a category
+# the command itself has an opinion about. `git ls-files` lists tracked files
+# only; anything under a noise directory that reaches its output is there
+# because somebody deliberately committed it, and hiding it would be wrong.
+_UNFILTERED_COMMANDS = ("git ls-files", "git ls-tree")
+
+# One `ls -R` block header: a directory path alone on a line, ending in ':',
+# preceded by a blank line (or the start of the output). `[^:]` keeps it from
+# matching a grep hit like `foo.py:3:else:`, which has colons further left.
+_LSR_HEADER_RE = re.compile(r"^(?P<dir>[^:\s][^:]*):$")
 
 # One `ls -l` line: mode, links, owner, [group], size, date, name. The group
 # column is optional because `ls -lG` and some BSD flags omit it.
@@ -161,6 +190,121 @@ def _common_prefix(paths: List[str]) -> str:
     if cut < 0:
         return ""
     return prefix[: cut + 1]
+
+
+# --- noise filtering (lossy) ------------------------------------------------
+def _active_noise_dirs(command: Optional[str]) -> FrozenSet[str]:
+    """Which noise directories may be dropped for `command`. Fails closed.
+
+    Three gates, in order of how badly each one would burn a user:
+
+    1. **No command, no dropping.** Without provenance we do not know whether
+       this text is a recursive listing or something a caller handed us
+       deliberately, so an empty set is returned and the codec stays fully
+       reversible. The auto-compress hook always passes ``--command``, so this
+       costs nothing where the savings actually live.
+    2. **A command that names a directory keeps it.** ``ls .git/``,
+       ``find . -path '*node_modules*'`` and ``ls -R build`` are requests for
+       exactly the thing this filter exists to hide; filtering them is not
+       compression, it is answering a different question. The test is a plain
+       substring match on the whole command, which over-approximates on purpose
+       — ``npm run build`` also spares ``build/``, and being too shy costs only
+       tokens while being too eager costs correctness.
+    3. **Curated-output commands are exempt entirely** (``_UNFILTERED_COMMANDS``).
+    """
+    if not command or not command.strip():
+        return frozenset()
+    lowered = command.lower()
+    if any(name in lowered for name in _UNFILTERED_COMMANDS):
+        return frozenset()
+    return frozenset(d for d in _NOISE_DIRS if d.lower() not in lowered)
+
+
+def _split_components(path: str) -> List[str]:
+    """Path split on either separator, with empty components removed."""
+    parts = [path]
+    for sep in _SEPARATORS:
+        parts = [piece for part in parts for piece in part.split(sep)]
+    return [p for p in parts if p and p not in (".", "..")]
+
+
+def _noise_hit(path: str, noise: FrozenSet[str], include_last: bool) -> Optional[str]:
+    """The first noise directory `path` lies under, or None.
+
+    `include_last` distinguishes the two shapes: for a file line only the
+    *directory* components count (a file merely named ``build`` is not noise),
+    while for an ``ls -R`` block header the whole path is a directory.
+    """
+    components = _split_components(path)
+    if not include_last:
+        components = components[:-1]
+    for comp in components:
+        if comp in noise:
+            return comp
+    return None
+
+
+def _drop_noise(lines: List[str], sentinel: str,
+                noise: FrozenSet[str]) -> Tuple[List[str], Optional[Dict[str, Any]]]:
+    """Lossy: remove entries living under a noise directory.
+
+    Handles both listing shapes. A path line (``find``/``grep``/``git`` output)
+    goes if any of its directory components is noise. An ``ls -R`` block —
+    a ``dir:`` header followed by bare names up to the next blank line — goes
+    whole when its header names a noise directory, because those bare names
+    carry no path of their own and would otherwise be orphaned under the
+    previous surviving header, which is worse than either keeping or dropping
+    them: it would be wrong.
+    """
+    if not noise or not lines:
+        return lines, None
+
+    out: List[str] = []
+    counts: Dict[str, int] = {}
+    # Start-of-output counts as a paragraph break, so the very first line can
+    # be a block header (which it is, for `ls -R`).
+    prev_blank = True
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        body = line[:-1] if line.endswith("\n") else line
+        header = _LSR_HEADER_RE.match(body) if prev_blank else None
+
+        if header and _looks_like_path(header.group("dir")):
+            hit = _noise_hit(header.group("dir"), noise, include_last=True)
+            j = i + 1
+            entries = 0
+            while j < len(lines) and lines[j].strip():
+                j += 1
+                entries += 1
+            # An empty noise block is left alone: dropping it would save one
+            # line and force the report to say "0 entries", and a filter whose
+            # only defence is telling you what it took cannot afford to say
+            # something untrue.
+            if hit is not None and entries:
+                if j < len(lines):
+                    j += 1  # the blank line that terminated the block goes too
+                counts[hit] = counts.get(hit, 0) + entries
+                i = j
+                prev_blank = True
+                continue
+
+        path = _line_path(line)
+        if path is not None:
+            hit = _noise_hit(path, noise, include_last=False)
+            if hit is not None:
+                counts[hit] = counts.get(hit, 0) + 1
+                i += 1
+                continue
+
+        out.append(line)
+        prev_blank = not line.strip()
+        i += 1
+
+    if not counts:
+        return lines, None
+    ordered = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    return out, {"tag": "noise", "counts": [[name, n] for name, n in ordered]}
 
 
 # --- transforms (each: lines -> (new_lines, op|None)) -----------------------
@@ -351,8 +495,38 @@ def _identity_result(text: str, reason: str) -> CompressResult:
     )
 
 
-def compress(text: str) -> CompressResult:
-    """Compress a file listing / search-result payload."""
+def _noise_markers(ops: List[Dict[str, Any]], sentinel: str) -> List[str]:
+    """In-band lines announcing what the noise filter removed.
+
+    The CLI's ``--footer-when-lossy`` also names these, but the footer is a flag
+    a caller may not pass, and the metadata sidecar is overwritten on every
+    call. A reader looking at a filtered listing has to be able to tell that it
+    is filtered from the text in front of them, so the announcement lives in the
+    payload and costs one short line per directory.
+    """
+    markers: List[str] = []
+    for op in ops:
+        if op["tag"] != "noise":
+            continue
+        for name, n in op["counts"]:
+            markers.append(f"{sentinel}drop {n} under {name}/\n")
+    return markers
+
+
+def _end_with_newline(lines: List[str]) -> List[str]:
+    """Ensure a marker appended after `lines` starts on its own line."""
+    if lines and not lines[-1].endswith("\n"):
+        lines = lines[:-1] + [lines[-1] + "\n"]
+    return lines
+
+
+def compress(text: str, command: Optional[str] = None) -> CompressResult:
+    """Compress a file listing / search-result payload.
+
+    `command` is the shell command that produced `text`, when known. It gates
+    the lossy noise filter and nothing else; without it the codec behaves
+    exactly as it did before that filter existed.
+    """
     if text == "":
         return _identity_result(text, "empty input")
 
@@ -360,7 +534,14 @@ def compress(text: str) -> CompressResult:
     lines = _split_keep(text)
     ops: List[Dict[str, Any]] = []
 
-    # Column elision runs first: it turns `ls -l` lines into bare names, which
+    # Noise dropping runs before everything: the transforms below all cost time
+    # proportional to the line count, and there is no sense factoring a prefix
+    # out of lines that are about to be discarded.
+    lines, noise_op = _drop_noise(lines, sentinel, _active_noise_dirs(command))
+    if noise_op is not None:
+        ops.append(noise_op)
+
+    # Column elision runs next: it turns `ls -l` lines into bare names, which
     # is what the later transforms know how to handle. Cap next, so a huge
     # listing's tail never has to be path-scanned or rewritten; the header
     # transform then runs only over the kept lines.
@@ -372,10 +553,22 @@ def compress(text: str) -> CompressResult:
         if op is not None:
             ops.append(op)
 
+    # Marker lines go on last, after every other transform has run. They carry
+    # no path, so putting them in earlier would make `_factor_prefix` see a
+    # non-homogeneous listing and factor nothing at all — the filter would have
+    # paid for itself by breaking the transform next to it.
+    markers = _noise_markers(ops, sentinel)
+    if markers:
+        lines = _end_with_newline(lines) + markers
+
     compressed = "".join(lines)
     dropped: List[str] = [
         f"{op['lines']} line(s) of `ls -l` size/owner/date columns"
         for op in ops if op["tag"] == "cols"
+    ] + [
+        f"{n} entr{'y' if n == 1 else 'ies'} under {name}/"
+        for op in ops if op["tag"] == "noise"
+        for name, n in op["counts"]
     ]
     metadata: Dict[str, Any] = {
         "compressor": NAME,
@@ -438,6 +631,13 @@ def decompress(compressed: str, metadata: Dict[str, Any]) -> str:
     sentinel: str = metadata["sentinel"]
     ops: List[Dict[str, Any]] = metadata.get("ops", [])
     lines = _split_keep(compressed)
+    # The noise markers were appended after every other transform, so they have
+    # to come off before any of those transforms is reversed — otherwise the
+    # prefix restorer would happily prepend a directory to them.
+    if any(op["tag"] == "noise" for op in ops):
+        marker_prefix = sentinel + "drop "
+        while lines and lines[-1].startswith(marker_prefix):
+            lines.pop()
     for op in reversed(ops):
         if op["tag"] == "dirs":
             lines = _ungroup_dirs(lines, sentinel, op)

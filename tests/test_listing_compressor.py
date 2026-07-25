@@ -295,5 +295,207 @@ class PerDirectoryGroupingTests(unittest.TestCase):
         self.assertEqual(back, text)
 
 
+# A `find`-style listing of a repo, the shape where most of the volume is noise.
+FIND_WITH_NOISE = """\
+./README.md
+./ltc/cli.py
+./ltc/core.py
+./ltc/__pycache__/cli.cpython-311.pyc
+./ltc/__pycache__/core.cpython-311.pyc
+./ltc/__pycache__/harness.cpython-311.pyc
+./.git/objects/1a/2b3c4d
+./.git/objects/5e/6f7a8b
+./.git/refs/heads/main
+./node_modules/left-pad/index.js
+./tests/test_cli.py
+"""
+
+# `ls -R`: a `dir:` header, then bare names, then a blank line. The names carry
+# no path of their own, which is what makes a whole-block decision necessary.
+LS_RECURSIVE = """\
+ltc:
+__init__.py
+cli.py
+__pycache__
+
+ltc/__pycache__:
+__init__.cpython-311.pyc
+cli.cpython-311.pyc
+core.cpython-311.pyc
+
+ltc/compressors:
+__init__.py
+listing_compressor.py
+"""
+
+
+class NoiseFilterTests(unittest.TestCase):
+    """The lossy filter: most of a recursive listing is not the answer."""
+
+    def test_find_style_noise_is_dropped(self):
+        res = compress_payload(FIND_WITH_NOISE, "listing", command="find .")
+        out = res.compressed
+        self.assertNotIn(".pyc", out)
+        self.assertNotIn("6f7a8b", out)
+        self.assertNotIn("left-pad", out)
+        # ...and everything that was actually asked for survives.
+        self.assertIn("README.md", out)
+        self.assertIn("cli.py", out)
+        self.assertIn("test_cli.py", out)
+
+    def test_dropping_declares_itself_and_counts_what_went(self):
+        res = compress_payload(FIND_WITH_NOISE, "listing", command="find .")
+        self.assertFalse(res.reversible)
+        self.assertTrue(res.metadata["lossy"])
+        joined = " ".join(res.dropped)
+        self.assertIn("3 entries under __pycache__/", joined)
+        self.assertIn("3 entries under .git/", joined)
+        self.assertIn("1 entry under node_modules/", joined)
+
+    def test_the_output_itself_says_it_was_filtered(self):
+        # The footer is a CLI flag and the sidecar is overwritten every call;
+        # the payload has to be self-describing on its own.
+        res = compress_payload(FIND_WITH_NOISE, "listing", command="find .")
+        sentinel = res.metadata["sentinel"]
+        self.assertIn(f"{sentinel}drop 3 under __pycache__/", res.compressed)
+
+    def test_it_is_worth_doing(self):
+        res = compress_payload(FIND_WITH_NOISE, "listing", command="find .")
+        self.assertGreater(res.reduction, 0.35, res.compressed)
+
+    def test_ls_recursive_drops_the_whole_block(self):
+        res = compress_payload(LS_RECURSIVE, "listing", command="ls -R ltc")
+        out = res.compressed
+        self.assertNotIn(".cpython-311.pyc", out)
+        # The header goes with its entries; no orphans left behind.
+        self.assertNotIn("ltc/__pycache__:", out)
+        self.assertIn("ltc/compressors:", out)
+        self.assertIn("listing_compressor.py", out)
+        self.assertGreater(res.reduction, 0.30, out)
+
+    def test_an_empty_noise_block_is_left_alone(self):
+        # It would save one line and force the report to say "0 entries".
+        text = "ltc:\ncli.py\ncore.py\n\nltc/__pycache__:\n"
+        res = compress_payload(text, "listing", command="ls -R ltc")
+        self.assertTrue(res.reversible)
+        self.assertEqual(decompress(res.compressed, res.metadata), text)
+
+    def test_ls_recursive_scored_zero_before_this(self):
+        # Bare names inside a block share no prefix and cap nothing, so every
+        # reversible transform in this codec is a no-op on `ls -R`. Filtering
+        # is the only thing that has ever moved this shape.
+        res = compress_payload(LS_RECURSIVE, "listing")
+        self.assertEqual(res.tokens_saved, 0)
+
+
+class NoiseFilterGateTests(unittest.TestCase):
+    """The three gates. Getting one of these wrong ships a wrong answer."""
+
+    def test_no_command_means_no_dropping(self):
+        res = compress_payload(FIND_WITH_NOISE, "listing")
+        self.assertTrue(res.reversible)
+        self.assertEqual(res.dropped, [])
+        self.assertIn(".pyc", res.compressed)
+        self.assertEqual(decompress(res.compressed, res.metadata), FIND_WITH_NOISE)
+
+    def test_a_command_naming_the_directory_keeps_it(self):
+        res = compress_payload(FIND_WITH_NOISE, "listing",
+                               command="find . -path '*node_modules*'")
+        self.assertIn("left-pad", res.compressed)
+        # The directories the user did not ask about are still filtered.
+        self.assertNotIn(".pyc", res.compressed)
+
+    def test_listing_a_noise_directory_directly_is_not_filtered(self):
+        text = ".git/config\n.git/HEAD\n.git/refs/heads/main\n.git/index\n"
+        res = compress_payload(text, "listing", command="ls -R .git/")
+        self.assertTrue(res.reversible)
+        self.assertEqual(decompress(res.compressed, res.metadata), text)
+
+    def test_git_ls_files_is_exempt_entirely(self):
+        # Tracked files are a curated set: anything under a noise directory is
+        # there because somebody committed it on purpose.
+        text = "README.md\nnode_modules/vendored/pinned.js\nltc/cli.py\n"
+        res = compress_payload(text, "listing", command="git ls-files")
+        self.assertTrue(res.reversible)
+        self.assertIn("pinned.js", res.compressed)
+
+    def test_a_file_merely_named_like_a_noise_dir_survives(self):
+        # Only directory components are noise. `build` the file is content.
+        text = "src/build\nsrc/dist\nsrc/main.py\nsrc/util.py\n"
+        res = compress_payload(text, "listing", command="find src")
+        self.assertIn("build", res.compressed)
+        self.assertIn("dist", res.compressed)
+        self.assertTrue(res.reversible)
+
+    def test_clean_listings_stay_reversible_under_a_command(self):
+        for text in (FIND_STYLE, GREP_STYLE, WINDOWS_STYLE, MULTI_DIR):
+            res = compress_payload(text, "listing", command="find .")
+            self.assertTrue(res.reversible, text[:40])
+            self.assertEqual(res.dropped, [])
+            self.assertEqual(decompress(res.compressed, res.metadata), text)
+
+
+class NoiseFilterInteractionTests(unittest.TestCase):
+    """The filter must not break the reversible transforms it runs before."""
+
+    def test_prefix_factoring_still_happens_after_filtering(self):
+        text = "".join(
+            [f"/srv/app/src/mod_{i}.py\n" for i in range(6)]
+            + [f"/srv/app/.git/objects/{i:02d}/abcdef\n" for i in range(6)]
+        )
+        res = compress_payload(text, "listing", command="find /srv/app")
+        self.assertNotIn("objects", res.compressed)
+        # One header, not one prefix per line: the marker lines are appended
+        # last precisely so they cannot break this.
+        self.assertEqual(res.compressed.count("/srv/app/"), 1)
+        self.assertGreater(res.reduction, 0.5, res.compressed)
+
+    def test_everything_except_the_dropped_lines_still_reverses(self):
+        text = "".join(
+            [f"/srv/app/src/mod_{i}.py\n" for i in range(6)]
+            + [f"/srv/app/.git/objects/{i:02d}/abcdef\n" for i in range(6)]
+        )
+        res = compress_payload(text, "listing", command="find /srv/app")
+        back = decompress(res.compressed, res.metadata)
+        expected = "".join(f"/srv/app/src/mod_{i}.py\n" for i in range(6))
+        self.assertEqual(back, expected)
+
+    def test_filtering_composes_with_capping(self):
+        text = "".join(
+            [f"pkg/sub/file_{i}.py\n" for i in range(lst._MAX_RESULTS + 20)]
+            + [f"pkg/__pycache__/file_{i}.pyc\n" for i in range(30)]
+        )
+        res = compress_payload(text, "listing", command="find pkg")
+        self.assertNotIn(".pyc", res.compressed)
+        self.assertIn("results omitted", res.compressed)
+
+    def test_missing_trailing_newline_does_not_glue_on_a_marker(self):
+        text = "a/.git/x\nb/keep.py\nb/other.py\nb/last.py"
+        res = compress_payload(text, "listing", command="find .")
+        self.assertNotIn("last.py~", res.compressed)
+        self.assertIn("last.py\n", res.compressed)
+
+
+class NoiseHelperTests(unittest.TestCase):
+    def test_active_dirs_excludes_anything_the_command_names(self):
+        self.assertEqual(lst._active_noise_dirs(None), frozenset())
+        self.assertEqual(lst._active_noise_dirs("   "), frozenset())
+        active = lst._active_noise_dirs("find .")
+        self.assertIn(".git", active)
+        self.assertNotIn(".git", lst._active_noise_dirs("ls .git"))
+        self.assertNotIn("build", lst._active_noise_dirs("npm run build"))
+
+    def test_noise_hit_respects_include_last(self):
+        noise = frozenset({"build"})
+        self.assertIsNone(lst._noise_hit("src/build", noise, include_last=False))
+        self.assertEqual(lst._noise_hit("src/build", noise, include_last=True), "build")
+        self.assertEqual(lst._noise_hit("src/build/o.js", noise, include_last=False),
+                         "build")
+
+    def test_split_components_handles_both_separators_and_dots(self):
+        self.assertEqual(lst._split_components("./a/b.py"), ["a", "b.py"])
+        self.assertEqual(lst._split_components("C:\\a\\b.py"), ["C:", "a", "b.py"])
+
+
 if __name__ == "__main__":
     unittest.main()

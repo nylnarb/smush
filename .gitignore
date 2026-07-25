@@ -24,6 +24,13 @@ corpus/
 # Local Claude Code settings (machine-specific paths and permissions)
 .claude/settings.local.json
 
+# Local-only working documents. These are the honest engineering log: measured
+# shortfalls, wrong assumptions, session-to-session handoff notes, and absolute
+# paths from this machine. Useful to keep, not useful to publish. The README is
+# the public face of the project; these two are the workbench behind it.
+DEV_NOTES.md
+NEXT_SESSION_PROMPTS.txt
+
 # Virtualenvs / build
 .venv/
 venv/
