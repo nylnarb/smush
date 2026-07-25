@@ -38,10 +38,16 @@ _REGISTRY: Dict[str, Tuple[Callable[[str], CompressResult],
 SUPPORTED_TYPES = ("auto", "json", "log", "listing", "generic", "pytest", "git")
 
 # Compressors that want the originating command itself, not just the content
-# type derived from it. Only the listing codec does: it drops noise directories,
-# and whether that is compression or a wrong answer depends on whether the user
-# asked for those directories by name. Everything else is decided by the bytes.
-_COMMAND_AWARE = frozenset({listing_compressor.NAME})
+# type derived from it. Two do, for the same reason in different clothes: the
+# output alone cannot tell you what the user asked for.
+#   * listing — it drops noise directories, and whether that is compression or a
+#     wrong answer depends on whether the user asked for those directories by
+#     name.
+#   * git — `git diff -U10` asks for wide context by name, and trimming it back
+#     to one line answers a different question than the one asked. The bytes of
+#     a wide-context diff are indistinguishable from a narrow one's.
+# Everything else is decided by the bytes.
+_COMMAND_AWARE = frozenset({listing_compressor.NAME, git_compressor.NAME})
 
 # --- sniffing thresholds (single place to tune detection) -------------------
 # Fraction of lines that must look path-shaped for "listing" to win.
