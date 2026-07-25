@@ -63,6 +63,8 @@ VERSION = 1
 _MAX_RESULTS = 200
 # A shared prefix shorter than this isn't worth a header line.
 _MIN_PREFIX_LEN = 4
+# A per-directory group smaller than this costs more (its header) than it saves.
+_MIN_GROUP_LINES = 3
 # Separators recognized as path boundaries (checked in this order).
 _SEPARATORS = ("/", "\\")
 # Fraction of lines that must be long-format before column elision engages.
@@ -247,6 +249,95 @@ def _factor_prefix(lines: List[str], sentinel: str) -> Tuple[List[str], Optional
     return out, op
 
 
+def _line_dir(line: str) -> Optional[str]:
+    """The directory part of a line's path, including its trailing separator.
+
+    Returns None when the line has no detectable path or the path has no
+    directory component (a bare filename at the listing root).
+    """
+    path = _line_path(line)
+    if path is None:
+        return None
+    cut = max(path.rfind(sep) for sep in _SEPARATORS)
+    if cut < 0:
+        return None
+    return path[: cut + 1]
+
+
+def _group_dirs(lines: List[str], sentinel: str) -> Tuple[List[str], Optional[Dict[str, Any]]]:
+    """Factor a per-directory prefix out of each *consecutive run* of lines.
+
+    Why this exists: ``_factor_prefix`` above factors ONE prefix shared by
+    *every* line, so a listing spanning more than one directory factors nothing
+    at all — the common prefix of ``.gitignore`` and
+    ``ltc/compressors/git_compressor.py`` is ``""``. Measured on this repo,
+    ``git ls-files`` (45 lines of almost entirely redundant paths across 6
+    directories) compressed by exactly 0%. Real listings are nearly always
+    multi-directory, so that was the common case failing, not an edge case.
+
+    Only *consecutive* runs are grouped, and the lines keep their original
+    order. Reordering to gather scattered directories would compress slightly
+    better and would stop the result being a faithful listing — `ls`, `find`
+    and `git ls-files` all emit sorted output, so same-directory lines are
+    already adjacent and there is nothing to gain by shuffling.
+
+    Exactly reversible: each group records its directory and line count, and
+    decompress replays them in order.
+    """
+    is_capped = bool(lines) and lines[-1].startswith(sentinel + "cap")
+    body = lines[:-1] if is_capped else lines
+    if not body:
+        return lines, None
+
+    # Build consecutive runs sharing a directory.
+    runs: List[Tuple[Optional[str], List[str]]] = []
+    for ln in body:
+        d = _line_dir(ln)
+        if runs and runs[-1][0] == d:
+            runs[-1][1].append(ln)
+        else:
+            runs.append((d, [ln]))
+
+    out: List[str] = []
+    groups: List[List[Any]] = []
+    for d, run in runs:
+        # A group has to clear its own header cost: the header spends the
+        # directory once plus the marker, and each line saves the directory.
+        # Below _MIN_GROUP_LINES that trade is a loss, so leave the run alone.
+        if d is None or len(d) < _MIN_PREFIX_LEN or len(run) < _MIN_GROUP_LINES:
+            out.extend(run)
+            continue
+        out.append(f"{sentinel}dir {d}\n")
+        out.extend(ln[len(d):] for ln in run)
+        groups.append([d, len(run)])
+
+    if not groups:
+        return lines, None
+    out = out + (lines[-1:] if is_capped else [])
+    return out, {"tag": "dirs", "groups": groups}
+
+
+def _ungroup_dirs(lines: List[str], sentinel: str, op: Dict[str, Any]) -> List[str]:
+    """Reverse ``_group_dirs``: consume each header and re-prefix its run."""
+    groups: List[List[Any]] = op["groups"]
+    out: List[str] = []
+    i = 0
+    g = 0
+    while i < len(lines):
+        line = lines[i]
+        if g < len(groups):
+            d, count = groups[g][0], int(groups[g][1])
+            if line == f"{sentinel}dir {d}\n":
+                for ln in lines[i + 1: i + 1 + count]:
+                    out.append(d + ln)
+                i += 1 + count
+                g += 1
+                continue
+        out.append(line)
+        i += 1
+    return out
+
+
 # --- public API -------------------------------------------------------------
 def _identity_result(text: str, reason: str) -> CompressResult:
     n = estimate_tokens(text)
@@ -273,7 +364,10 @@ def compress(text: str) -> CompressResult:
     # is what the later transforms know how to handle. Cap next, so a huge
     # listing's tail never has to be path-scanned or rewritten; the header
     # transform then runs only over the kept lines.
-    for transform in (_elide_columns, _cap_results, _factor_prefix):
+    # _group_dirs runs last, after the global prefix is gone: on a listing that
+    # shares one root it factors the *remaining* per-directory tails, and on a
+    # multi-directory listing (where _factor_prefix no-ops) it does all the work.
+    for transform in (_elide_columns, _cap_results, _factor_prefix, _group_dirs):
         lines, op = transform(lines, sentinel)
         if op is not None:
             ops.append(op)
@@ -345,7 +439,9 @@ def decompress(compressed: str, metadata: Dict[str, Any]) -> str:
     ops: List[Dict[str, Any]] = metadata.get("ops", [])
     lines = _split_keep(compressed)
     for op in reversed(ops):
-        if op["tag"] == "base":
+        if op["tag"] == "dirs":
+            lines = _ungroup_dirs(lines, sentinel, op)
+        elif op["tag"] == "base":
             lines = _unfactor_prefix(lines, sentinel, op)
         elif op["tag"] == "cap":
             lines = _uncap_results(lines, sentinel, op)

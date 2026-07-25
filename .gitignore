@@ -13,6 +13,14 @@ ltc_stats.db
 # Per-call metadata sidecars written by `ltc compress`
 *.ltc.meta.json
 
+# Real captured command output (scripts/capture_corpus.py). Same reasoning as
+# the ledger above: this is verbatim output from a real machine — absolute
+# paths, branch names, package lists. samples/ is synthetic and publishable;
+# corpus/ is local-only measurement data and must never be committed. Kept as a
+# sibling of samples/ rather than a child, so the harness cannot wander into it
+# and so there is no path by which a real capture lands in a published sample.
+corpus/
+
 # Local Claude Code settings (machine-specific paths and permissions)
 .claude/settings.local.json
 

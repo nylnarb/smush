@@ -223,5 +223,77 @@ class TestRobustness(unittest.TestCase):
         self.assertEqual(res.compressor, "log")
 
 
+MULTI_DIR = """.gitignore
+README.md
+setup.py
+ltc/__init__.py
+ltc/cli.py
+ltc/core.py
+ltc/compressors/git_compressor.py
+ltc/compressors/json_compressor.py
+ltc/compressors/log_compressor.py
+tests/test_cli.py
+tests/test_core.py
+tests/test_harness.py
+"""
+
+
+class PerDirectoryGroupingTests(unittest.TestCase):
+    """Multi-directory listings used to factor nothing at all.
+
+    `_factor_prefix` needs ONE prefix shared by every line, so anything
+    spanning several directories had a common prefix of "" and compressed by
+    0%. Real listings — `git ls-files`, `find`, `grep -r` — are nearly always
+    multi-directory, so this was the common case failing, not an edge case.
+    Measured on this repo's own `git ls-files`: 0% before, 22% after.
+    """
+
+    def test_multi_directory_listing_now_compresses(self):
+        res, back = roundtrip(MULTI_DIR)
+        self.assertEqual(back, MULTI_DIR)
+        self.assertGreater(res.reduction, 0.10, res.compressed)
+
+    def test_grouping_is_exactly_reversible(self):
+        res, back = roundtrip(MULTI_DIR)
+        self.assertEqual(back, MULTI_DIR)
+        self.assertTrue(res.reversible)
+        self.assertEqual(res.dropped, [])
+
+    def test_original_line_order_is_preserved(self):
+        # Only consecutive runs are grouped; reordering would compress a little
+        # better and stop the result being a faithful listing.
+        res, _ = roundtrip(MULTI_DIR)
+        kept = [ln for ln in res.compressed.split("\n")
+                if ln and not ln.startswith(res.metadata["sentinel"])]
+        self.assertEqual(kept[0], ".gitignore")
+        self.assertLess(kept.index("cli.py"), kept.index("test_cli.py"))
+
+    def test_runs_below_the_minimum_are_left_alone(self):
+        # Two lines in a directory cannot pay for their own header line.
+        text = "aaaa/one.py\naaaa/two.py\nbbbb/three.py\nbbbb/four.py\n"
+        res, back = roundtrip(text)
+        self.assertEqual(back, text)
+        self.assertNotIn(f'{res.metadata["sentinel"]}dir', res.compressed)
+
+    def test_bare_filenames_without_directories_are_untouched(self):
+        text = "README.md\nLICENSE\nsetup.py\nMakefile\n"
+        res, back = roundtrip(text)
+        self.assertEqual(back, text)
+
+    def test_grep_style_lines_group_too(self):
+        text = "".join(f"src/app/mod_{i}.py:{i}:    return None\n"
+                       for i in range(6))
+        res, back = roundtrip(text)
+        self.assertEqual(back, text)
+        self.assertGreater(res.reduction, 0.0)
+
+    def test_grouping_survives_capping(self):
+        # The cap marker is the last line and carries no path; grouping must
+        # step around it rather than trying to prefix it.
+        text = "".join(f"pkg/sub/file_{i}.py\n" for i in range(lst._MAX_RESULTS + 20))
+        res, back = roundtrip(text)
+        self.assertEqual(back, text)
+
+
 if __name__ == "__main__":
     unittest.main()
