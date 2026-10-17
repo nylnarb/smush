@@ -7,8 +7,8 @@ No third-party test dependency — stdlib unittest only.
 import json
 import unittest
 
-from ltc import compress_payload, decompress
-from ltc.compressors import json_compressor as jc
+from smush import compress_payload, decompress
+from smush.compressors import json_compressor as jc
 
 
 def roundtrip(text: str):

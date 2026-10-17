@@ -23,7 +23,7 @@ class CompressResult:
                            ``{"compressor": <name>, "version": <int>}`` so that
                            `decompress` is self-contained.
         original_tokens:   Estimated token count of the input (heuristic; see
-                           ltc.tokens). Not an exact tokenizer count.
+                           smush.tokens). Not an exact tokenizer count.
         compressed_tokens: Estimated token count of `compressed`.
         compressor:        Name of the compressor that produced this result
                            (e.g. "json", "identity").

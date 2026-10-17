@@ -6,7 +6,7 @@ Read `~/.claude/.compress_mode` using the Bash tool: `cat "$HOME/.claude/.compre
 
 Report the result to the user in one short sentence, interpreting it:
 
-- `ltc` — ltc compresses Bash output; rtk does not run
-- `rtk` — rtk rewrites Bash commands; ltc does not run
+- `smush` — smush compresses Bash output; rtk does not run
+- `rtk` — rtk rewrites Bash commands; smush does not run
 - `off` — neither runs; output is raw
 - `(missing)` or anything unrecognized — treated as `rtk` by the hook

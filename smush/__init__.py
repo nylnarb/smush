@@ -1,4 +1,4 @@
-"""ltc — local token compressor.
+"""smush — local token compressor.
 
 A dependency-free (stdlib-only) toolkit for shrinking large text blobs before
 they enter an LLM context window.

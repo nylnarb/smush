@@ -11,8 +11,8 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 
-from ltc import cli, stats_store
-from ltc.result import CompressResult
+from smush import cli, stats_store
+from smush.result import CompressResult
 
 
 def make_result(compressor="listing", original=100, compressed=40, reversible=True,
@@ -46,7 +46,7 @@ class LedgerSchemaTests(unittest.TestCase):
                              self._columns())
 
     def test_migrates_a_pre_existing_ledger_without_the_new_columns(self):
-        """Rows written by an older ltc must survive, not be dropped or rewritten."""
+        """Rows written by an older smush must survive, not be dropped or rewritten."""
         conn = sqlite3.connect(self.db)
         conn.execute(
             "CREATE TABLE compressions (id INTEGER PRIMARY KEY AUTOINCREMENT, "

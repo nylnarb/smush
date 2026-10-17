@@ -138,7 +138,7 @@ _PREAMBLE_RES = (
 _WIDE_CONTEXT_RE = re.compile(
     r"(?:^|\s)(?:-U\s*\d+|--unified=\d+|--function-context|-W)(?:\s|$)")
 
-# `        modified:   ltc/core.py` inside `git status`.
+# `        modified:   smush/core.py` inside `git status`.
 _STATUS_ENTRY_RE = re.compile(r"^(?P<indent>\s+)(?P<state>[a-z][a-z ]{2,20}):\s+(?P<path>\S.*)$")
 # `  (use "git add <file>..." to include ...)` — a hint line, always droppable.
 _STATUS_HINT_RE = re.compile(r"^\s*\(.*\)\s*$")

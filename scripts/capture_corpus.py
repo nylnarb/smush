@@ -36,7 +36,7 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 
-from ltc import compress_payload, decompress  # noqa: E402
+from smush import compress_payload, decompress  # noqa: E402
 
 # Deliberately NOT under samples/. A directory that must never be published
 # should not live inside the one that is. The first version of this script put
@@ -57,8 +57,8 @@ COMMANDS = [
     ("unittest", [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"]),
     ("pip_list", [sys.executable, "-m", "pip", "list"]),
     ("ls_long", ["ls", "-la"]),
-    ("ls_recursive", ["ls", "-R", "ltc", "tests"]),
-    ("grep_def", ["grep", "-rn", "def ", "ltc"]),
+    ("ls_recursive", ["ls", "-R", "smush", "tests"]),
+    ("grep_def", ["grep", "-rn", "def ", "smush"]),
 ]
 
 
@@ -137,7 +137,7 @@ def measure() -> int:
     print(f"{'TOTAL':<22}{'':<10}{total_orig:>7}{total_saved:>8}{overall:>7.0%}")
     print(f"\n{len(names)} samples, identity {identity} "
           f"({identity / len(names):.0%}), round-trip failures {failures}")
-    print("\nCompare against `python -m ltc.harness` (synthetic samples/). A wide")
+    print("\nCompare against `python -m smush.harness` (synthetic samples/). A wide")
     print("gap means the synthetic corpus is flattering the codecs, not that the")
     print("codecs improved.")
     return 1 if failures else 0

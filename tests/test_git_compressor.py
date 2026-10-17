@@ -10,7 +10,7 @@ scaffolding a reader reconstructs for free.
 
 import unittest
 
-from ltc import compress_payload, decompress
+from smush import compress_payload, decompress
 
 
 STATUS = """\
@@ -19,14 +19,14 @@ Your branch is up to date with 'origin/stage-b'.
 
 Changes to be committed:
   (use "git restore --staged <file>..." to unstage)
-        modified:   ltc/core.py
-        new file:   ltc/compressors/git_compressor.py
+        modified:   smush/core.py
+        new file:   smush/compressors/git_compressor.py
 
 Changes not staged for commit:
   (use "git add <file>..." to update what will be committed)
   (use "git restore <file>..." to discard changes in working directory)
         modified:   README.md
-        modified:   ltc/harness.py
+        modified:   smush/harness.py
         deleted:    old.py
 
 Untracked files:
@@ -116,7 +116,7 @@ def run(text: str, command=None):
 class TestStatus(unittest.TestCase):
     def test_every_path_and_state_survives(self):
         out = run(STATUS).compressed
-        for path in ("ltc/core.py", "ltc/compressors/git_compressor.py",
+        for path in ("smush/core.py", "smush/compressors/git_compressor.py",
                      "README.md", "old.py", "samples/git_status.txt",
                      "tests/test_git_compressor.py"):
             self.assertIn(path, out)
@@ -133,9 +133,9 @@ class TestStatus(unittest.TestCase):
 
     def test_same_state_paths_share_one_line(self):
         out = run(STATUS).compressed
-        self.assertIn("modified: README.md, ltc/harness.py", out)
+        self.assertIn("modified: README.md, smush/harness.py", out)
         # Distinct states within one section must not be merged.
-        self.assertIn("new file: ltc/compressors/git_compressor.py", out)
+        self.assertIn("new file: smush/compressors/git_compressor.py", out)
         self.assertIn("deleted: old.py", out)
 
     def test_untracked_paths_are_grouped(self):

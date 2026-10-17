@@ -7,7 +7,7 @@ can never race each other.
 
     ~/.claude/.compress_mode  contains one word:
 
-        ltc   -> pipe the command's stdout through `python -m ltc compress`
+        smush   -> pipe the command's stdout through `python -m smush compress`
         rtk   -> hand off to headroom-rtk-rewrite.py (rtk's own rewriting)
         off   -> do nothing; the command runs unmodified
         (missing / unreadable / anything else) -> treated as `rtk`
@@ -19,17 +19,17 @@ listed first silently wins and the other's work is discarded regardless of
 any switch file. Collapsing them into one dispatcher is what makes the mode
 switch actually decide anything.
 
-Toggle with /ltc-on, /rtk-on, /compress-off; inspect with /compress-status.
+Toggle with /smush-on, /rtk-on, /compress-off; inspect with /compress-status.
 
 SAFETY: Must never block a command. Any error, unknown mode, missing binary,
 or non-rewritable command results in silent passthrough (exit 0, no output).
 
-INSTALLATION: see integration/README.md in the ltc repo. Every machine-specific
+INSTALLATION: see integration/README.md in the smush repo. Every machine-specific
 path below is an environment-variable override with a portable default:
 
-    LTC_CLAUDE_DIR  where .claude lives          (default: ~/.claude)
-    LTC_PYTHON      interpreter that runs ltc    (default: this interpreter)
-    LTC_REPO        clone of ln_token_compressor (default: ~/repos/ln_token_compressor)
+    SMUSH_CLAUDE_DIR  where .claude lives          (default: ~/.claude)
+    SMUSH_PYTHON      interpreter that runs smush    (default: this interpreter)
+    SMUSH_REPO        clone of smush (default: ~/repos/smush)
 """
 import sys
 import json
@@ -40,20 +40,20 @@ import datetime
 
 HOME = os.path.expanduser("~")
 
-CLAUDE_DIR = os.environ.get("LTC_CLAUDE_DIR", os.path.join(HOME, ".claude"))
+CLAUDE_DIR = os.environ.get("SMUSH_CLAUDE_DIR", os.path.join(HOME, ".claude"))
 MODE_FILE = os.path.join(CLAUDE_DIR, ".compress_mode")
-LOG = os.path.join(CLAUDE_DIR, "hooks", "ltc-auto-compress.log")
+LOG = os.path.join(CLAUDE_DIR, "hooks", "smush-auto-compress.log")
 RTK_HOOK = os.path.join(CLAUDE_DIR, "hooks", "headroom-rtk-rewrite.py")
 
 # Overridable so the same hook works on a machine with a different layout
 # (e.g. a work laptop) without editing this file.
-PYTHON = os.environ.get("LTC_PYTHON", sys.executable)
-LTC_REPO = os.environ.get(
-    "LTC_REPO", os.path.join(HOME, "repos", "ln_token_compressor")
+PYTHON = os.environ.get("SMUSH_PYTHON", sys.executable)
+SMUSH_REPO = os.environ.get(
+    "SMUSH_REPO", os.path.join(HOME, "repos", "smush")
 )
-STATS_DB = os.path.join(LTC_REPO, "ltc_stats.db")
+STATS_DB = os.path.join(SMUSH_REPO, "smush_stats.db")
 
-VALID_MODES = ("ltc", "rtk", "off")
+VALID_MODES = ("smush", "rtk", "off")
 DEFAULT_MODE = "rtk"
 
 # Commands where wrapping in a pipe would break the point of running them
@@ -132,7 +132,7 @@ def split_leading_cd(cmd):
 def has_heredoc(cmd):
     """True if the command contains a heredoc, which wrapping would break.
 
-    `python - <<'PY' ... PY` wrapped as `( ... ) 2>file | ltc; cat file` is a
+    `python - <<'PY' ... PY` wrapped as `( ... ) 2>file | smush; cat file` is a
     bash syntax error: the redirections and the `;` trailer land between the
     heredoc's opening line and its body. Detection is deliberately crude -- a
     false positive costs one uncompressed command, while a false negative
@@ -163,8 +163,8 @@ def delegate_to_rtk(raw_stdin):
     sys.exit(0)
 
 
-def wrap_for_ltc(data, tool_input, cd_prefix, cmd):
-    """Rewrite the command so its stdout flows through `ltc compress`.
+def wrap_for_smush(data, tool_input, cd_prefix, cmd):
+    """Rewrite the command so its stdout flows through `smush compress`.
 
     `cd_prefix` is emitted OUTSIDE the subshell so its directory change still
     persists into later Bash calls; only `cmd` is wrapped and compressed. It is
@@ -181,13 +181,13 @@ def wrap_for_ltc(data, tool_input, cd_prefix, cmd):
     """
     session_id = data.get("session_id") or ""
     wrapped = cd_prefix + (
-        '( %s ) 2>/tmp/.ltc_stderr | PYTHONPATH="%s" "%s" -m ltc compress '
-        '--type auto --meta-out /tmp/.ltc_last.meta.json --footer-when-lossy '
+        '( %s ) 2>/tmp/.smush_stderr | PYTHONPATH="%s" "%s" -m smush compress '
+        '--type auto --meta-out /tmp/.smush_last.meta.json --footer-when-lossy '
         '--log-stats "%s" --session-id "%s" --command "%s"; '
-        'cat /tmp/.ltc_stderr >&2'
+        'cat /tmp/.smush_stderr >&2'
     ) % (
         cmd,
-        LTC_REPO.replace("\\", "/"),
+        SMUSH_REPO.replace("\\", "/"),
         PYTHON.replace("\\", "/"),
         STATS_DB.replace("\\", "/"),
         session_id,
@@ -197,7 +197,7 @@ def wrap_for_ltc(data, tool_input, cd_prefix, cmd):
     updated = dict(tool_input)
     updated["command"] = wrapped
 
-    log("LTC | %s" % cmd)
+    log("SMUSH | %s" % cmd)
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
@@ -227,7 +227,7 @@ def main():
     if mode == "rtk":
         delegate_to_rtk(raw_stdin)
 
-    # --- mode == "ltc" -----------------------------------------------------
+    # --- mode == "smush" -----------------------------------------------------
     tool_input = data.get("tool_input") or {}
     cmd = tool_input.get("command")
     if not isinstance(cmd, str) or not cmd.strip():
@@ -248,7 +248,7 @@ def main():
     if any(stripped.startswith(p) for p in SKIP_PREFIXES):
         passthrough("skipped (interactive/skip-listed): " + stripped[:60])
 
-    wrap_for_ltc(data, tool_input, cd_prefix, rest)
+    wrap_for_smush(data, tool_input, cd_prefix, rest)
 
 
 if __name__ == "__main__":

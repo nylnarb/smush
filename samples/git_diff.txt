@@ -1,7 +1,7 @@
-diff --git a/ltc/core.py b/ltc/core.py
+diff --git a/smush/core.py b/smush/core.py
 index 3f2a1b9..9c4d2e7 100644
---- a/ltc/core.py
-+++ b/ltc/core.py
+--- a/smush/core.py
++++ b/smush/core.py
 @@ -33,10 +33,14 @@ from .compressors import listing_compressor
  # Content types a caller may request. "auto" sniffs; others map to a compressor.
  SUPPORTED_TYPES = ("auto", "json", "log", "listing", "generic")
@@ -26,10 +26,10 @@ index 3f2a1b9..9c4d2e7 100644
      if _looks_like_log(content):
          return "log"
      return "identity"
-diff --git a/ltc/result.py b/ltc/result.py
+diff --git a/smush/result.py b/smush/result.py
 index 8a1c0d3..b2e5f61 100644
---- a/ltc/result.py
-+++ b/ltc/result.py
+--- a/smush/result.py
++++ b/smush/result.py
 @@ -36,6 +36,7 @@ class CompressResult:
      compressed: str
      metadata: Dict[str, Any]

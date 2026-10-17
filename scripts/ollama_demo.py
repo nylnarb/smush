@@ -1,9 +1,9 @@
-"""Demo: measure ltc compression against a real local model via Ollama.
+"""Demo: measure smush compression against a real local model via Ollama.
 
-Not part of the ltc package (ltc stays stdlib-only, no-network) — this is a
+Not part of the smush package (smush stays stdlib-only, no-network) — this is a
 standalone harness script that talks to a locally running `ollama serve` over
 localhost HTTP. It sends the same question with (a) the raw payload and (b)
-the ltc-compressed payload as context, and checks the model gives an
+the smush-compressed payload as context, and checks the model gives an
 equivalent answer either way, to sanity-check that compression doesn't
 destroy information the model actually needs.
 
@@ -23,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ltc import compress_payload
+from smush import compress_payload
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
 

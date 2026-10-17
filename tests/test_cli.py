@@ -1,4 +1,4 @@
-"""Tests for ltc.cli argument handling and compress/decompress round-trip.
+"""Tests for smush.cli argument handling and compress/decompress round-trip.
 
 Run: python -m unittest discover -s tests    (from the repo root)
 No third-party test dependency - stdlib unittest only.
@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout, redirect_stderr
 
-from ltc import cli
+from smush import cli
 
 
 class CliRoundTripTests(unittest.TestCase):
@@ -74,7 +74,7 @@ class CliRoundTripTests(unittest.TestCase):
         with redirect_stdout(out):
             rc = cli.main(["compress", in_path])
         self.assertEqual(rc, 0)
-        self.assertTrue(os.path.exists(in_path + ".ltc.meta.json"))
+        self.assertTrue(os.path.exists(in_path + ".smush.meta.json"))
 
     def test_explicit_type_overrides_auto_detection(self):
         in_path = self._path("plain.txt")
@@ -140,7 +140,7 @@ class LossyFooterTests(unittest.TestCase):
     def test_lossy_result_gets_a_footer_naming_what_was_dropped(self):
         out = self._compress(PYTEST_RUN, "--footer-when-lossy")
         footer = out.strip().splitlines()[-1]
-        self.assertTrue(footer.startswith("[ltc pytest -"), footer)
+        self.assertTrue(footer.startswith("[smush pytest -"), footer)
         self.assertIn("dropped", footer)
         self.assertTrue(footer.endswith("]"), footer)
 
@@ -153,21 +153,21 @@ class LossyFooterTests(unittest.TestCase):
     def test_reversible_result_gets_no_footer(self):
         out = self._compress(json.dumps([{"a": 1}, {"a": 2}, {"a": 3}]),
                              "--footer-when-lossy")
-        self.assertNotIn("[ltc ", out)
+        self.assertNotIn("[smush ", out)
 
     def test_footer_is_opt_in(self):
-        self.assertNotIn("[ltc ", self._compress(PYTEST_RUN))
+        self.assertNotIn("[smush ", self._compress(PYTEST_RUN))
 
     def test_footer_starts_on_its_own_line(self):
         # Without the newline guard the footer would be glued to the last
         # line of real output, corrupting it.
         out = self._compress(PYTEST_RUN.rstrip("\n"), "--footer-when-lossy")
         lines = out.splitlines()
-        self.assertTrue(lines[-1].startswith("[ltc "))
-        self.assertEqual(1, sum(1 for ln in lines if ln.startswith("[ltc ")))
+        self.assertTrue(lines[-1].startswith("[smush "))
+        self.assertEqual(1, sum(1 for ln in lines if ln.startswith("[smush ")))
 
     def test_footer_helper_is_pure_and_returns_none_when_reversible(self):
-        from ltc import compress_payload
+        from smush import compress_payload
         reversible = compress_payload('[{"a": 1}, {"a": 2}]')
         self.assertIsNone(cli.lossy_footer(reversible))
         lossy = compress_payload(PYTEST_RUN)

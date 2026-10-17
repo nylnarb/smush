@@ -11,7 +11,7 @@ never claims to be reversible.
 
 import unittest
 
-from ltc import compress_payload, decompress
+from smush import compress_payload, decompress
 
 
 PYTEST_RUN = """\

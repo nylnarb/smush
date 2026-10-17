@@ -1,12 +1,12 @@
-"""Cumulative, all-time savings ledger for ltc compress calls.
+"""Cumulative, all-time savings ledger for smush compress calls.
 
 Stdlib-only SQLite file living alongside the repo (not under ~/.claude), so
-`ltc gain`-style totals survive across sessions. Every `ltc compress
+`smush gain`-style totals survive across sessions. Every `smush compress
 --log-stats PATH` call appends one row; nothing here ever deletes or
 aggregates in place, so the raw history is always available.
 
 Beyond the totals, the ledger exists to answer one diagnostic question:
-*is ltc actually working?* That is the identity rate — the share of commands
+*is smush actually working?* That is the identity rate — the share of commands
 that fell through every codec and saved nothing. Totals alone hide it, because
 a handful of well-compressed payloads can mask a majority that compress to
 nothing at all. `breakdown()` reports it alongside the per-compressor and

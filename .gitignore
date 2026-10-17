@@ -3,15 +3,15 @@ __pycache__/
 *.py[cod]
 
 # Local savings ledger. NEVER commit this: the `command` column stores every
-# Bash command ltc compressed, verbatim, including absolute paths and anything
+# Bash command smush compressed, verbatim, including absolute paths and anything
 # else that appeared on the command line. On a work machine that is the
 # employer's information, and publishing it is the one way this repo could leak
 # something it has no right to.
-ltc_stats.db
-*.ltc_stats.db
+smush_stats.db
+*.smush_stats.db
 
-# Per-call metadata sidecars written by `ltc compress`
-*.ltc.meta.json
+# Per-call metadata sidecars written by `smush compress`
+*.smush.meta.json
 
 # Real captured command output (scripts/capture_corpus.py). Same reasoning as
 # the ledger above: this is verbatim output from a real machine — absolute

@@ -1,6 +1,6 @@
 """Command-string -> content-type hint.
 
-The single biggest lever ltc has: the caller usually knows *what produced*
+The single biggest lever smush has: the caller usually knows *what produced*
 the output, and that is far more reliable than guessing from the bytes. A
 `pytest` run whose tests all passed looks nothing like a traceback, but we
 still want the pytest codec; content sniffing alone can never know that.

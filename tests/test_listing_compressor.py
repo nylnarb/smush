@@ -6,8 +6,8 @@ stdlib unittest only — no third-party test dependency.
 
 import unittest
 
-from ltc import compress_payload, decompress
-from ltc.compressors import listing_compressor as lst
+from smush import compress_payload, decompress
+from smush.compressors import listing_compressor as lst
 
 
 def roundtrip(text: str):
@@ -121,7 +121,7 @@ total 96
 drwxr-xr-x  8 alice staff   256 Jul 24 17:43 .
 -rw-r--r--  1 alice staff    39 Jul 18 14:02 .gitignore
 -rw-r--r--  1 alice staff 17512 Jul 24 17:40 README.md
-drwxr-xr-x  9 alice staff   288 Jul 24 17:43 ltc
+drwxr-xr-x  9 alice staff   288 Jul 24 17:43 smush
 -rw-r--r--  1 alice staff   100 Jul 19 13:31 settings.local.json
 """
 
@@ -131,9 +131,9 @@ class TestLongFormatElision(unittest.TestCase):
 
     def test_names_and_modes_survive(self):
         out = compress_payload(LS_LONG, "listing").compressed
-        for name in (".gitignore", "README.md", "ltc", "settings.local.json"):
+        for name in (".gitignore", "README.md", "smush", "settings.local.json"):
             self.assertIn(name, out)
-        self.assertIn("drwxr-xr-x ltc", out)
+        self.assertIn("drwxr-xr-x smush", out)
 
     def test_size_owner_and_date_columns_are_gone(self):
         out = compress_payload(LS_LONG, "listing").compressed
@@ -226,12 +226,12 @@ class TestRobustness(unittest.TestCase):
 MULTI_DIR = """.gitignore
 README.md
 setup.py
-ltc/__init__.py
-ltc/cli.py
-ltc/core.py
-ltc/compressors/git_compressor.py
-ltc/compressors/json_compressor.py
-ltc/compressors/log_compressor.py
+smush/__init__.py
+smush/cli.py
+smush/core.py
+smush/compressors/git_compressor.py
+smush/compressors/json_compressor.py
+smush/compressors/log_compressor.py
 tests/test_cli.py
 tests/test_core.py
 tests/test_harness.py
@@ -298,11 +298,11 @@ class PerDirectoryGroupingTests(unittest.TestCase):
 # A `find`-style listing of a repo, the shape where most of the volume is noise.
 FIND_WITH_NOISE = """\
 ./README.md
-./ltc/cli.py
-./ltc/core.py
-./ltc/__pycache__/cli.cpython-311.pyc
-./ltc/__pycache__/core.cpython-311.pyc
-./ltc/__pycache__/harness.cpython-311.pyc
+./smush/cli.py
+./smush/core.py
+./smush/__pycache__/cli.cpython-311.pyc
+./smush/__pycache__/core.cpython-311.pyc
+./smush/__pycache__/harness.cpython-311.pyc
 ./.git/objects/1a/2b3c4d
 ./.git/objects/5e/6f7a8b
 ./.git/refs/heads/main
@@ -313,17 +313,17 @@ FIND_WITH_NOISE = """\
 # `ls -R`: a `dir:` header, then bare names, then a blank line. The names carry
 # no path of their own, which is what makes a whole-block decision necessary.
 LS_RECURSIVE = """\
-ltc:
+smush:
 __init__.py
 cli.py
 __pycache__
 
-ltc/__pycache__:
+smush/__pycache__:
 __init__.cpython-311.pyc
 cli.cpython-311.pyc
 core.cpython-311.pyc
 
-ltc/compressors:
+smush/compressors:
 __init__.py
 listing_compressor.py
 """
@@ -364,19 +364,19 @@ class NoiseFilterTests(unittest.TestCase):
         self.assertGreater(res.reduction, 0.35, res.compressed)
 
     def test_ls_recursive_drops_the_whole_block(self):
-        res = compress_payload(LS_RECURSIVE, "listing", command="ls -R ltc")
+        res = compress_payload(LS_RECURSIVE, "listing", command="ls -R smush")
         out = res.compressed
         self.assertNotIn(".cpython-311.pyc", out)
         # The header goes with its entries; no orphans left behind.
-        self.assertNotIn("ltc/__pycache__:", out)
-        self.assertIn("ltc/compressors:", out)
+        self.assertNotIn("smush/__pycache__:", out)
+        self.assertIn("smush/compressors:", out)
         self.assertIn("listing_compressor.py", out)
         self.assertGreater(res.reduction, 0.30, out)
 
     def test_an_empty_noise_block_is_left_alone(self):
         # It would save one line and force the report to say "0 entries".
-        text = "ltc:\ncli.py\ncore.py\n\nltc/__pycache__:\n"
-        res = compress_payload(text, "listing", command="ls -R ltc")
+        text = "smush:\ncli.py\ncore.py\n\nsmush/__pycache__:\n"
+        res = compress_payload(text, "listing", command="ls -R smush")
         self.assertTrue(res.reversible)
         self.assertEqual(decompress(res.compressed, res.metadata), text)
 
@@ -414,7 +414,7 @@ class NoiseFilterGateTests(unittest.TestCase):
     def test_git_ls_files_is_exempt_entirely(self):
         # Tracked files are a curated set: anything under a noise directory is
         # there because somebody committed it on purpose.
-        text = "README.md\nnode_modules/vendored/pinned.js\nltc/cli.py\n"
+        text = "README.md\nnode_modules/vendored/pinned.js\nsmush/cli.py\n"
         res = compress_payload(text, "listing", command="git ls-files")
         self.assertTrue(res.reversible)
         self.assertIn("pinned.js", res.compressed)

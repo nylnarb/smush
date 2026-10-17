@@ -1,11 +1,11 @@
-# `integration/` — the Claude Code wiring for `ltc`
+# `integration/` — the Claude Code wiring for `smush`
 
 Everything in this directory lives *outside* the repo when it is installed: it
 gets copied into your Claude Code home directory (`~/.claude/`, i.e.
 `%USERPROFILE%\.claude\` on Windows). That directory is not version controlled,
 so these are the canonical copies. If a machine dies, reinstall from here.
 
-Nothing here is imported by the `ltc` package. `ltc` works standalone from the
+Nothing here is imported by the `smush` package. `smush` works standalone from the
 CLI; this directory is only the glue that makes it run automatically inside
 Claude Code.
 
@@ -14,8 +14,8 @@ Throughout this document:
 | placeholder | meaning |
 |---|---|
 | `<CLAUDE_HOME>` | your Claude Code config dir — `~/.claude`, on Windows `%USERPROFILE%\.claude` |
-| `<LTC_REPO>` | your clone of this repository |
-| `<PYTHON>` | the interpreter that should run `ltc` (3.8+, stdlib only) |
+| `<SMUSH_REPO>` | your clone of this repository |
+| `<PYTHON>` | the interpreter that should run `smush` (3.8+, stdlib only) |
 
 The vendored files contain **no absolute machine paths** — they derive
 everything from `$HOME` / `~` and accept environment-variable overrides. That is
@@ -25,8 +25,8 @@ Two hooks, on two different events, behind two independent switches:
 
 | hook | event | tool | switch file | default |
 |---|---|---|---|---|
-| `ltc-auto-compress.py` | `PreToolUse` | `Bash` | `.compress_mode` (`ltc`/`rtk`/`off`) | `rtk` |
-| `ltc-read-compress.py` | `PostToolUse` | `Read` | `.compress_mode_read` (`on`/`off`) | `off` |
+| `smush-auto-compress.py` | `PreToolUse` | `Bash` | `.compress_mode` (`smush`/`rtk`/`off`) | `rtk` |
+| `smush-read-compress.py` | `PostToolUse` | `Read` | `.compress_mode_read` (`on`/`off`) | `off` |
 
 They are complementary, not alternatives — Bash output is ~20% of a session's
 context and `Read` output ~37%, so the useful configuration usually runs both.
@@ -35,7 +35,7 @@ context and `Read` output ~37%, so the useful configuration usually runs both.
 
 ## Contents
 
-### `hooks/ltc-auto-compress.py`
+### `hooks/smush-auto-compress.py`
 
 The single `PreToolUse` hook registered for the `Bash` tool. It is a
 **dispatcher**, not a compressor: it reads one word from
@@ -43,8 +43,8 @@ The single `PreToolUse` hook registered for the `Bash` tool. It is a
 
 | mode | behavior |
 |------|----------|
-| `ltc` | rewrites the outgoing command so its stdout is piped through `python -m ltc compress`; rtk does not run |
-| `rtk` | forwards the identical hook payload to `headroom-rtk-rewrite.py` and echoes that verdict verbatim; ltc does not run |
+| `smush` | rewrites the outgoing command so its stdout is piped through `python -m smush compress`; rtk does not run |
+| `rtk` | forwards the identical hook payload to `headroom-rtk-rewrite.py` and echoes that verdict verbatim; smush does not run |
 | `off`  | does nothing; the command runs unmodified |
 | *(missing / unreadable / unrecognized)* | treated as `rtk` |
 
@@ -55,13 +55,13 @@ Key behaviours, all of which exist because of a bug that was actually hit:
   "run the original command unchanged". A hook must never be able to block a
   command.
 - **A leading `cd` is hoisted, not skipped.** `cd <dir> && <cmd>` becomes
-  `cd <dir> && ( <cmd> ) | ltc compress …`, so the directory change still runs
+  `cd <dir> && ( <cmd> ) | smush compress …`, so the directory change still runs
   in the parent shell and persists into later Bash calls, while only `<cmd>` is
   compressed. `cd ` used to sit in the skip list, and since that list is tested
   with `startswith` against the *whole* command, every `cd <repo> && <anything>`
   was exempted outright — 38 of 55 Bash calls in one measured session.
 - **Heredocs are skipped entirely.** `python - <<'PY' … PY` wrapped as
-  `( … ) 2>file | ltc; cat file` is a bash syntax error. Detection is a crude
+  `( … ) 2>file | smush; cat file` is a bash syntax error. Detection is a crude
   `"<<" in cmd`: a false positive costs one uncompressed command, a false
   negative breaks the command.
 - **stderr is kept out of the pipe.** Mixing diagnostics into the payload breaks
@@ -73,7 +73,7 @@ Key behaviours, all of which exist because of a bug that was actually hit:
 Claude Code hands *every* `PreToolUse` hook the **original** `tool_input`. When
 two hooks both emit `updatedInput`, whichever is listed first wins and the
 other's work is silently discarded — no error, no warning, and no switch file
-can change it. Registering `ltc`'s hook and `rtk`'s hook side by side therefore
+can change it. Registering `smush`'s hook and `rtk`'s hook side by side therefore
 cannot work; one of them is always a no-op. That cost a full debugging session
 before it was understood.
 
@@ -84,7 +84,7 @@ subprocess call *inside* the dispatcher rather than as a second registration.
 The rule is **per event**, not global. A `PostToolUse` hook alongside this
 `PreToolUse` one is fine; two `PreToolUse` hooks that both rewrite input are not.
 
-### `hooks/ltc-read-compress.py`
+### `hooks/smush-read-compress.py`
 
 A `PostToolUse` hook on `Read`, gated by its own switch file
 `<CLAUDE_HOME>/.compress_mode_read` (`on` / `off`, default `off`).
@@ -94,9 +94,9 @@ Bash output is — and it was unreachable from hook-land until Claude Code
 2.1.220 added `updatedToolOutput` to the `PostToolUse` schema ("Replaces the
 tool output before it is sent to the model"). This hook is the thing that
 reaches it. Verified live: a `Read` of a 9.7k-char grep capture came back as
-`listing`-compressed text with an ltc footer instead of the raw file.
+`listing`-compressed text with an smush footer instead of the raw file.
 
-**Separate switch on purpose.** `.compress_mode` governs Bash, where `ltc` and
+**Separate switch on purpose.** `.compress_mode` governs Bash, where `smush` and
 `rtk` are alternatives. rtk has no `Read` equivalent at all, so folding Read
 compression into that switch would mean giving up rtk's Bash rewriting purely
 to reach Read. Two switches let both run at once, which is the configuration
@@ -153,44 +153,44 @@ name; the YAML front matter's `description` is what shows in the picker.
 
 | file | command | what it does |
 |---|---|---|
-| `ltc-on.md` | `/ltc-on` | writes `ltc` to the mode file |
+| `smush-on.md` | `/smush-on` | writes `smush` to the mode file |
 | `rtk-on.md` | `/rtk-on` | writes `rtk` to the mode file |
 | `compress-off.md` | `/compress-off` | writes `off` to the mode file |
 | `compress-status.md` | `/compress-status` | reads and interprets the mode file |
-| `ltc-status.md` | `/ltc-status` | alias for `/compress-status` |
-| `ltc-off.md` | `/ltc-off` | alias for `/rtk-on` (historical meaning: "stop using ltc", which left rtk running) |
-| `ltc-gain.md` | `/ltc-gain` | runs `python -m ltc gain --breakdown` and reports savings, leading with the identity rate |
+| `smush-status.md` | `/smush-status` | alias for `/compress-status` |
+| `smush-off.md` | `/smush-off` | alias for `/rtk-on` (historical meaning: "stop using smush", which left rtk running) |
+| `smush-gain.md` | `/smush-gain` | runs `python -m smush gain --breakdown` and reports savings, leading with the identity rate |
 
-`/ltc-gain` reads `PYTHONPATH` from `$LTC_REPO`, falling back to
-`$HOME/repos/ln_token_compressor`. If your clone lives elsewhere, either export
-`LTC_REPO` or edit that one line after installing.
+`/smush-gain` reads `PYTHONPATH` from `$SMUSH_REPO`, falling back to
+`$HOME/repos/smush`. If your clone lives elsewhere, either export
+`SMUSH_REPO` or edit that one line after installing.
 
 ---
 
 ## Installing on a fresh machine
 
-1. **Clone this repo** somewhere; call that path `<LTC_REPO>`. There is nothing
-   to build and no dependencies — `ltc` is stdlib-only.
+1. **Clone this repo** somewhere; call that path `<SMUSH_REPO>`. There is nothing
+   to build and no dependencies — `smush` is stdlib-only.
 
    Sanity check:
 
    ```bash
-   PYTHONPATH="<LTC_REPO>" <PYTHON> -m ltc --help
+   PYTHONPATH="<SMUSH_REPO>" <PYTHON> -m smush --help
    ```
 
 2. **Copy the hook** into `<CLAUDE_HOME>/hooks/`:
 
    ```bash
    mkdir -p ~/.claude/hooks
-   cp <LTC_REPO>/integration/hooks/ltc-auto-compress.py ~/.claude/hooks/
-   cp <LTC_REPO>/integration/hooks/ltc-read-compress.py ~/.claude/hooks/
+   cp <SMUSH_REPO>/integration/hooks/smush-auto-compress.py ~/.claude/hooks/
+   cp <SMUSH_REPO>/integration/hooks/smush-read-compress.py ~/.claude/hooks/
    ```
 
 3. **Copy the slash commands** into `<CLAUDE_HOME>/commands/`:
 
    ```bash
    mkdir -p ~/.claude/commands
-   cp <LTC_REPO>/integration/commands/*.md ~/.claude/commands/
+   cp <SMUSH_REPO>/integration/commands/*.md ~/.claude/commands/
    ```
 
 4. **Register the hook** in `<CLAUDE_HOME>/settings.json`. Add (or merge into)
@@ -206,7 +206,7 @@ name; the YAML front matter's `description` is what shows in the picker.
            "hooks": [
              {
                "type": "command",
-               "command": "\"<PYTHON>\" \"<CLAUDE_HOME>/hooks/ltc-auto-compress.py\"",
+               "command": "\"<PYTHON>\" \"<CLAUDE_HOME>/hooks/smush-auto-compress.py\"",
                "timeout": 20
              }
            ]
@@ -218,7 +218,7 @@ name; the YAML front matter's `description` is what shows in the picker.
            "hooks": [
              {
                "type": "command",
-               "command": "\"<PYTHON>\" \"<CLAUDE_HOME>/hooks/ltc-read-compress.py\"",
+               "command": "\"<PYTHON>\" \"<CLAUDE_HOME>/hooks/smush-read-compress.py\"",
                "timeout": 15
              }
            ]
@@ -246,46 +246,46 @@ name; the YAML front matter's `description` is what shows in the picker.
    `rtk` mode.
 
 6. **Set the Bash mode.** The hook defaults to `rtk` when the file is absent,
-   so to actually use ltc for Bash:
+   so to actually use smush for Bash:
 
    ```bash
-   printf 'ltc\n' > ~/.claude/.compress_mode
+   printf 'smush\n' > ~/.claude/.compress_mode
    ```
 
-   or just run `/ltc-on` in a session. Verify with `/compress-status`.
+   or just run `/smush-on` in a session. Verify with `/compress-status`.
 
 7. **Optional environment overrides.** If your layout differs from the defaults,
    set any of these (in `settings.json`'s `env` block, or in the shell):
 
    | var | default | purpose |
    |---|---|---|
-   | `LTC_CLAUDE_DIR` | `~/.claude` | where the mode file, log, and rtk hook live |
-   | `LTC_PYTHON` | the interpreter running the hook | interpreter used to run `ltc` and delegate to rtk |
-   | `LTC_REPO` | `~/repos/ln_token_compressor` | clone location; also where `ltc_stats.db` is written |
+   | `SMUSH_CLAUDE_DIR` | `~/.claude` | where the mode file, log, and rtk hook live |
+   | `SMUSH_PYTHON` | the interpreter running the hook | interpreter used to run `smush` and delegate to rtk |
+   | `SMUSH_REPO` | `~/repos/smush` | clone location; also where `smush_stats.db` is written |
 
    Setting these is preferred over editing the hook, so future re-vendors stay
    drop-in.
 
 ## Verifying it works
 
-- `/compress-status` should report `ltc`.
+- `/compress-status` should report `smush`.
 - Run any Bash command, then check the dispatcher log:
-  `<CLAUDE_HOME>/hooks/ltc-auto-compress.log`. Each line is either
-  `LTC | <command>` (wrapped) or `passthrough: skipped (…)`. A log dominated by
+  `<CLAUDE_HOME>/hooks/smush-auto-compress.log`. Each line is either
+  `SMUSH | <command>` (wrapped) or `passthrough: skipped (…)`. A log dominated by
   `skipped` lines is the first thing to check when savings look low.
-- `/ltc-gain` should show non-zero rows once a few commands have run.
+- `/smush-gain` should show non-zero rows once a few commands have run.
 - For the Read hook, `Read` a file over 2,000 characters that is **not** source
   (a `.txt` log or a `.json` dump), then check
-  `<CLAUDE_HOME>/hooks/ltc-read-compress.log`. Lines read `APPLIED | …`,
+  `<CLAUDE_HOME>/hooks/smush-read-compress.log`. Lines read `APPLIED | …`,
   `SHADOW (source, not applied) | …`, `skip: REFUSED lossy | …`, or
   `skip: no gain | …`.
   Do not infer success from the session still working — a shape mismatch
-  reverts silently. Success is compressed text with an `[ltc: …]` footer
+  reverts silently. Success is compressed text with an `[smush: …]` footer
   actually arriving in the transcript.
 
 ## Notes
 
-- `ltc_stats.db` (written to `<LTC_REPO>/ltc_stats.db`) is the savings ledger.
+- `smush_stats.db` (written to `<SMUSH_REPO>/smush_stats.db`) is the savings ledger.
   It is gitignored and must never be committed — it contains command text from
   real sessions.
 - `rtk` mode requires `headroom-rtk-rewrite.py` to be present in

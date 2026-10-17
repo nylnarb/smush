@@ -6,8 +6,8 @@ stdlib unittest only — no third-party test dependency.
 
 import unittest
 
-from ltc import compress_payload, decompress
-from ltc.compressors import log_compressor as lc
+from smush import compress_payload, decompress
+from smush.compressors import log_compressor as lc
 
 
 def roundtrip(text: str):

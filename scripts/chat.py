@@ -1,8 +1,8 @@
-"""Interactive chat REPL that compresses every turn with ltc before sending it
+"""Interactive chat REPL that compresses every turn with smush before sending it
 to either Ollama or Claude — same script, pick the backend with a flag, so two
 terminal windows can each run it side by side with no file edits needed.
 
-Not part of the ltc package (ltc stays stdlib-only, no-network) — this is a
+Not part of the smush package (smush stays stdlib-only, no-network) — this is a
 standalone harness script, same pattern as ollama_demo.py.
 
 Usage:
@@ -12,7 +12,7 @@ Usage:
 Env:
     ANTHROPIC_API_KEY   required for --backend claude
 
-Each line you type is compressed via ltc.compress_payload(..., "auto") before
+Each line you type is compressed via smush.compress_payload(..., "auto") before
 being sent as the prompt/message. Type 'exit' or Ctrl-C to quit.
 """
 
@@ -27,7 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ltc import compress_payload
+from smush import compress_payload
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
 CLAUDE_URL = "https://api.anthropic.com/v1/messages"
@@ -67,7 +67,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--backend", choices=["ollama", "claude"], required=True)
     parser.add_argument("--model", required=True)
-    parser.add_argument("--stats", action="store_true", help="Print ltc compression stats per turn.")
+    parser.add_argument("--stats", action="store_true", help="Print smush compression stats per turn.")
     args = parser.parse_args()
 
     api_key = None
@@ -92,7 +92,7 @@ def main() -> int:
         result = compress_payload(line, "auto")
         if args.stats:
             print(
-                f"[ltc] {result.compressor} {result.original_tokens}->"
+                f"[smush] {result.compressor} {result.original_tokens}->"
                 f"{result.compressed_tokens} tokens ({result.reduction:.1%})",
                 file=sys.stderr,
             )

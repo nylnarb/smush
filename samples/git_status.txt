@@ -3,16 +3,16 @@ Your branch is up to date with 'origin/stage-b'.
 
 Changes to be committed:
   (use "git restore --staged <file>..." to unstage)
-        modified:   ltc/core.py
-        modified:   ltc/result.py
-        new file:   ltc/compressors/git_compressor.py
-        new file:   ltc/compressors/pytest_compressor.py
+        modified:   smush/core.py
+        modified:   smush/result.py
+        new file:   smush/compressors/git_compressor.py
+        new file:   smush/compressors/pytest_compressor.py
 
 Changes not staged for commit:
   (use "git add <file>..." to update what will be committed)
   (use "git restore <file>..." to discard changes in working directory)
         modified:   README.md
-        modified:   ltc/harness.py
+        modified:   smush/harness.py
 
 Untracked files:
   (use "git add <file>..." to include in what will be committed)

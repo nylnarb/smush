@@ -1,7 +1,7 @@
 """Measurement harness: runs every registered compressor over sample payloads
 and reports per-file reduction %, round-trip correctness, and worst cases.
 
-Reads the registry dynamically via `ltc.core._REGISTRY` / `SUPPORTED_TYPES` so
+Reads the registry dynamically via `smush.core._REGISTRY` / `SUPPORTED_TYPES` so
 it automatically covers any compressor added elsewhere, without hardcoding
 compressor names here. Stdlib only; no network, no writes outside what the
 caller explicitly asks for (this module never writes files).
@@ -140,7 +140,7 @@ def format_table(results: Sequence[SampleResult]) -> str:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="ltc.harness",
+        prog="smush.harness",
         description="Run all registered compressors over sample payloads and report reduction stats.",
     )
     default_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "samples")

@@ -1,14 +1,14 @@
-"""MCP server exposing ltc's compress/decompress as explicitly-invoked tools.
+"""MCP server exposing smush's compress/decompress as explicitly-invoked tools.
 
 Transport: stdio only (no network port). This is the *explicit-invocation*
 transport — an agent calls `compress`/`decompress`/`stats` deliberately, on
 its own judgment, the same way it would call any other tool. It is NOT an
 auto-proxy: nothing here intercepts payloads automatically before they reach
 a model. A future Layer-3 auto-proxy would sit elsewhere and call
-`ltc.compress_payload` directly without going through this server.
+`smush.compress_payload` directly without going through this server.
 
-Requires the optional `mcp` dependency (`pip install ltc[mcp]` / `pip install
-mcp`). The core `ltc` package itself stays stdlib-only; only this module
+Requires the optional `mcp` dependency (`pip install smush[mcp]` / `pip install
+mcp`). The core `smush` package itself stays stdlib-only; only this module
 imports `mcp`.
 """
 
@@ -20,7 +20,7 @@ from mcp.server.fastmcp import FastMCP
 
 from . import compress_payload, decompress as _decompress, SUPPORTED_TYPES
 
-mcp = FastMCP("ltc")
+mcp = FastMCP("smush")
 
 
 @mcp.tool()

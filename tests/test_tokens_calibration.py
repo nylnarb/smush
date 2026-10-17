@@ -3,12 +3,12 @@
 Run: python -m unittest discover -s tests    (from the repo root)
 stdlib unittest only — no third-party test dependency.
 
-`ltc.tokens.estimate_tokens` ships no tokenizer, so its constants are fitted
+`smush.tokens.estimate_tokens` ships no tokenizer, so its constants are fitted
 rather than derived. This file is what keeps that fit honest: each fixture
 below carries reference counts measured once, offline, with two real BPE
 tokenizers (GPT-2 and DeepSeek-LLM via `transformers`). Neither library is a
 dependency here — only the resulting integers are, so the test stays
-stdlib-only and offline like the rest of ltc.
+stdlib-only and offline like the rest of smush.
 
 **Why two tokenizers and not one.** They disagree with each other by up to 1.5x
 on the same text (GPT-2 charges a token per leading space, DeepSeek merges
@@ -31,10 +31,10 @@ To re-measure the reference counts after deliberately changing a fixture:
 
 import unittest
 
-from ltc.tokens import estimate_tokens
+from smush.tokens import estimate_tokens
 
 # --- fixtures ---------------------------------------------------------------
-# One per content family ltc actually sees, chosen so that each stresses a
+# One per content family smush actually sees, chosen so that each stresses a
 # different rule in the estimator: banner bars, column padding, hex ids,
 # structural punctuation, indentation, ordinary English.
 
@@ -73,12 +73,12 @@ FIXTURES = {
         "\n"
         "Changes to be committed:\n"
         "  (use \"git restore --staged <file>...\" to unstage)\n"
-        "\tmodified:   ltc/stats_store.py\n"
-        "\tnew file:   ltc/compressors/git_compressor.py\n"
+        "\tmodified:   smush/stats_store.py\n"
+        "\tnew file:   smush/compressors/git_compressor.py\n"
         "\n"
         "Changes not staged for commit:\n"
         "\tmodified:   README.md\n"
-        "\tmodified:   ltc/cli.py\n"
+        "\tmodified:   smush/cli.py\n"
         "\n"
         "Untracked files:\n"
         "\tsamples/git_status.txt\n"
@@ -88,18 +88,18 @@ FIXTURES = {
         "drwxr-xr-x  1 dev 197609     0 Jul 24 18:59 .\n"
         "drwxr-xr-x  1 dev 197609     0 Jul 24 13:03 ..\n"
         "-rw-r--r--  1 dev 197609 21949 Jul 24 19:00 README.md\n"
-        "-rw-r--r--  1 dev 197609 12288 Jul 24 18:33 ltc_stats.db\n"
+        "-rw-r--r--  1 dev 197609 12288 Jul 24 18:33 smush_stats.db\n"
         "-rw-r--r--  1 dev 197609  4078 Jul 24 16:05 NEXT_SESSION_PROMPTS.txt\n"
-        "drwxr-xr-x  1 dev 197609     0 Jul 24 18:53 ltc\n"
+        "drwxr-xr-x  1 dev 197609     0 Jul 24 18:53 smush\n"
         "drwxr-xr-x  1 dev 197609     0 Jul 24 18:56 tests\n"
     ),
     "traceback": (
         "Traceback (most recent call last):\n"
         "  File \"/usr/lib/python3.11/runpy.py\", line 198, in _run_module_as_main\n"
         "    return _run_code(code, main_globals, None,\n"
-        "  File \"/srv/app/ltc/cli.py\", line 86, in _run_compress\n"
+        "  File \"/srv/app/smush/cli.py\", line 86, in _run_compress\n"
         "    result = compress_payload(content, args.type)\n"
-        "  File \"/srv/app/ltc/core.py\", line 216, in compress_payload\n"
+        "  File \"/srv/app/smush/core.py\", line 216, in compress_payload\n"
         "    raise ValueError(f\"unsupported content_type {content_type!r}\")\n"
         "ValueError: unsupported content_type 'yaml'\n"
     ),
@@ -111,10 +111,10 @@ FIXTURES = {
         "]\n"
     ),
     "grep_hits": (
-        "ltc/core.py:33:def _sniff(content: str) -> str:\n"
-        "ltc/core.py:91:def compress_payload(content, content_type=\"auto\"):\n"
-        "ltc/cli.py:86:    result = compress_payload(content, args.type)\n"
-        "ltc/mcp_server.py:44:    return compress_payload(text, kind).as_dict()\n"
+        "smush/core.py:33:def _sniff(content: str) -> str:\n"
+        "smush/core.py:91:def compress_payload(content, content_type=\"auto\"):\n"
+        "smush/cli.py:86:    result = compress_payload(content, args.type)\n"
+        "smush/mcp_server.py:44:    return compress_payload(text, kind).as_dict()\n"
         "tests/test_cli.py:12:    out = compress_payload(\"{}\", \"json\")\n"
     ),
     "hashes": (

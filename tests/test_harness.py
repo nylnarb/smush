@@ -1,4 +1,4 @@
-"""Tests for ltc.harness: sample runner and round-trip verification.
+"""Tests for smush.harness: sample runner and round-trip verification.
 
 Run: python -m unittest discover -s tests    (from the repo root)
 No third-party test dependency - stdlib unittest only.
@@ -9,7 +9,7 @@ import os
 import tempfile
 import unittest
 
-from ltc import harness
+from smush import harness
 
 
 class HarnessSampleTests(unittest.TestCase):
@@ -74,7 +74,7 @@ class LossyContractTests(unittest.TestCase):
                 yield os.path.join(d, name)
 
     def test_every_lossy_sample_names_what_it_dropped(self):
-        from ltc import compress_payload
+        from smush import compress_payload
         seen_lossy = 0
         for path in self._samples():
             with open(path, "r", encoding="utf-8") as f:
@@ -91,7 +91,7 @@ class LossyContractTests(unittest.TestCase):
         # The case that caught this: `unittest -v` output where the pytest
         # codec finds no progress lines or passing names to drop, and only
         # blank-line padding collapses.
-        from ltc.compressors import pytest_compressor
+        from smush.compressors import pytest_compressor
         text = "Ran 12 tests in 0.4s\n\n\n\nOK\n"
         result = pytest_compressor.compress(text)
         if result.lossy:

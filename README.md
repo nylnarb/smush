@@ -13,7 +13,7 @@ is still plain, readable text the model can act on.
 ## Why not gzip?
 
 The reader is the model. `H4sIAAAAAAAA/61Ty27...` saves bytes but destroys
-the content. ltc compresses *structure* instead, so the output stays the same
+the content. smush compresses *structure* instead, so the output stays the same
 kind of text. For example, a `find` listing where every line shares a long
 prefix:
 
@@ -39,7 +39,7 @@ The prefix is spent once, and the output is still obviously a file listing.
 Requires Python 3. Clone the repo; there is nothing to install.
 
 ```python
-from ltc import compress_payload, decompress
+from smush import compress_payload, decompress
 
 result = compress_payload(text, command="git diff")  # command is optional
 result.compressed   # send this to the model
@@ -66,7 +66,7 @@ python -m unittest discover -s tests -v
 | git     | one-line commit headers, trims diff context to 2 lines, groups `git status` by state | no |
 
 **Choosing a codec.** If you pass the command that produced the output,
-`ltc/commands.py` picks the codec from it. Otherwise ltc sniffs the content
+`smush/commands.py` picks the codec from it. Otherwise smush sniffs the content
 (json → pytest → git → listing → log → generic → identity). An unrecognized
 command returns no hint rather than a guess, because a wrong codec mangles
 output while no codec only costs compression.
@@ -83,14 +83,14 @@ messages, paths, SHAs and `+`/`-` diff lines are never dropped.
 ## CLI
 
 ```bash
-# compress a file; writes users.json.ltc.meta.json, token stats go to stderr
-python -m ltc compress samples/users.json --stats
+# compress a file; writes users.json.smush.meta.json, token stats go to stderr
+python -m smush compress samples/users.json --stats
 
 # stdin/stdout
-cat samples/traceback.log | python -m ltc compress --meta-out out.meta.json > out.txt
+cat samples/traceback.log | python -m smush compress --meta-out out.meta.json > out.txt
 
 # reverse it
-python -m ltc decompress out.txt --meta out.meta.json
+python -m smush decompress out.txt --meta out.meta.json
 ```
 
 `compress` options:
@@ -100,7 +100,7 @@ python -m ltc decompress out.txt --meta out.meta.json
 - `--stats`: before/after token counts on stderr
 - `--footer-when-lossy`: when output is lossy, append one line to stdout
   saying what was dropped, e.g.
-  `[ltc pytest -71% | dropped 4 progress line(s); 16 session/warning header line(s)]`
+  `[smush pytest -71% | dropped 4 progress line(s); 16 session/warning header line(s)]`
 - `--meta-out PATH`: where to write the metadata needed to decompress
 - `--log-stats PATH` and `--session-id ID`: append this call's savings to a
   SQLite ledger
@@ -108,10 +108,10 @@ python -m ltc decompress out.txt --meta out.meta.json
 ### Tracking savings
 
 ```bash
-python -m ltc gain                         # all-time total
-python -m ltc gain --session-id <id>       # one session
-python -m ltc gain --breakdown --top 5     # per codec and per command
-python -m ltc gain --db path/to/ltc_stats.db
+python -m smush gain                         # all-time total
+python -m smush gain --session-id <id>       # one session
+python -m smush gain --breakdown --top 5     # per codec and per command
+python -m smush gain --db path/to/smush_stats.db
 ```
 
 In `--breakdown`, watch the **identity rate**: the share of calls where no
@@ -124,19 +124,20 @@ falling through.
 as tools the agent can call. Requires `pip install mcp`.
 
 ```bash
-claude mcp add ltc -- python -m ltc.mcp_server
+claude mcp add smush -- python -m smush.mcp_server
 ```
 
-**Automatic compression (hook).** The author runs ltc as a Claude Code
+**Automatic compression (hook).** The author runs smush as a Claude Code
 `PreToolUse` hook on `Bash` that pipes each command's stdout through:
 
 ```bash
-python -m ltc compress --type auto --command "<cmd>" --footer-when-lossy \
-  --log-stats <path>/ltc_stats.db --session-id <session_id>
+python -m smush compress --type auto --command "<cmd>" --footer-when-lossy \
+  --log-stats <path>/smush_stats.db --session-id <session_id>
 ```
 
-The hook script is not included in this repo. If you write your own, keep
-these lessons from building it:
+The hook, a `PostToolUse` hook for `Read` output, and the slash commands are in
+[`integration/`](integration/README.md), with install steps. Lessons from
+building them, if you adapt or write your own:
 
 - Always pass `--footer-when-lossy`. A hook overwrites its metadata on every
   call, so nothing it compresses can be reversed, and the footer is the only
@@ -154,7 +155,7 @@ these lessons from building it:
 
 ## Measured results
 
-`python -m ltc.harness` runs every codec over `samples/` (or a directory you
+`python -m smush.harness` runs every codec over `samples/` (or a directory you
 pass) and exits non-zero if any reversible codec fails to round-trip:
 
 | file             | codec   | reduction | round-trip |
@@ -162,12 +163,12 @@ pass) and exits non-zero if any reversible codec fails to round-trip:
 | grep_results.txt | listing | 18.9%     | OK         |
 | git_status.txt   | git     | 38.4%     | lossy      |
 | users.json       | json    | 41.1%     | OK         |
-| git_diff.txt     | git     | 47.0%     | lossy      |
+| git_diff.txt     | git     | 54.3%     | lossy      |
 | ls_long.txt      | listing | 56.9%     | lossy      |
 | traceback.log    | log     | 57.2%     | OK         |
 | pytest_run.txt   | pytest  | 70.8%     | lossy      |
 
-Average: 47.2%.
+Average: 48.2%.
 
 **Treat that as an upper bound.** The samples were written by the same person
 who wrote the codecs. On real captured output from ordinary commands
@@ -175,24 +176,24 @@ who wrote the codecs. On real captured output from ordinary commands
 that real-world volume is `git diff` (2% saved) and `ls -R` (0%; its block
 format isn't parsed yet), so those are the next things to improve.
 
-Token counts come from `ltc/tokens.py`, a regex-based estimator calibrated
+Token counts come from `smush/tokens.py`, a regex-based estimator calibrated
 against two real tokenizers. It's used only for before/after ratios.
 
 ## Privacy
 
-`ltc_stats.db` stores every compressed command **verbatim**, including paths,
+`smush_stats.db` stores every compressed command **verbatim**, including paths,
 branch names and anything else on the command line. It is gitignored; keep it
 that way. Likewise `corpus/` holds real machine output and is gitignored.
 `samples/` is synthetic, so anyone can reproduce the published numbers.
 
 ## Repo layout
 
-- `ltc/core.py`: `compress_payload()`, routing and the codec registry
-- `ltc/commands.py`: command → codec hint
-- `ltc/result.py`: `CompressResult`
-- `ltc/tokens.py`: token estimator
-- `ltc/compressors/`: one file per codec
-- `ltc/cli.py`, `ltc/harness.py`, `ltc/mcp_server.py`, `ltc/stats_store.py`
+- `smush/core.py`: `compress_payload()`, routing and the codec registry
+- `smush/commands.py`: command → codec hint
+- `smush/result.py`: `CompressResult`
+- `smush/tokens.py`: token estimator
+- `smush/compressors/`: one file per codec
+- `smush/cli.py`, `smush/harness.py`, `smush/mcp_server.py`, `smush/stats_store.py`
 - `scripts/`: corpus capture, Ollama demo, chat REPL
 - `tests/`: stdlib `unittest`
 

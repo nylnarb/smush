@@ -1,9 +1,9 @@
-"""Command-line interface for ltc.
+"""Command-line interface for smush.
 
 Stdlib only. Two modes:
 
-  compress:   ltc compress <file|-> [--type TYPE] [--stats] [--meta-out PATH]
-  decompress: ltc decompress <file|-> --meta PATH [--type TYPE (ignored)]
+  compress:   smush compress <file|-> [--type TYPE] [--stats] [--meta-out PATH]
+  decompress: smush decompress <file|-> --meta PATH [--type TYPE (ignored)]
 
 `--stats` prints a before/after token report to stderr so stdout stays a
 clean pipe of the compressed/decompressed text. The metadata sidecar is
@@ -31,12 +31,12 @@ def _read_input(path: Optional[str]) -> str:
 
 def _default_meta_path(path: Optional[str]) -> str:
     if path is None or path == "-":
-        return "stdin.ltc.meta.json"
-    return path + ".ltc.meta.json"
+        return "stdin.smush.meta.json"
+    return path + ".smush.meta.json"
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="ltc", description="Local token compressor.")
+    parser = argparse.ArgumentParser(prog="smush", description="Local token compressor.")
     sub = parser.add_subparsers(dest="command", required=True)
 
     compress_p = sub.add_parser("compress", help="Compress a file or stdin.")
@@ -52,7 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
                                   "lossy. Silent for reversible results.")
     compress_p.add_argument("--meta-out", default=None,
                              help="Where to write the metadata sidecar JSON "
-                                  "(default: <file>.ltc.meta.json).")
+                                  "(default: <file>.smush.meta.json).")
     compress_p.add_argument("--log-stats", default=None,
                              help="Append this call's token savings to a "
                                   "cumulative SQLite ledger at PATH (for "
@@ -72,11 +72,11 @@ def build_parser() -> argparse.ArgumentParser:
                                help="Compressed input file, or '-' for stdin (default).")
     decompress_p.add_argument("--meta", required=True,
                                help="Path to the metadata sidecar JSON produced by "
-                                    "`ltc compress --meta-out`.")
+                                    "`smush compress --meta-out`.")
 
     gain_p = sub.add_parser("gain", help="Print cumulative token savings.")
     gain_p.add_argument("--db", default=None,
-                         help="Path to the stats ledger (default: ltc_stats.db "
+                         help="Path to the stats ledger (default: smush_stats.db "
                               "next to this repo).")
     gain_p.add_argument("--session-id", default=None,
                          help="Restrict the total to one session id instead of "
@@ -109,7 +109,7 @@ def lossy_footer(result) -> Optional[str]:
     if not result.lossy:
         return None
     dropped = "; ".join(result.dropped) if result.dropped else "unspecified"
-    return (f"[ltc {result.compressor} -{result.reduction:.0%} "
+    return (f"[smush {result.compressor} -{result.reduction:.0%} "
             f"| dropped {dropped}]")
 
 
@@ -165,16 +165,16 @@ def _run_decompress(args: argparse.Namespace) -> int:
 def _default_db_path() -> str:
     import os
     return os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ltc_stats.db"
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "smush_stats.db"
     )
 
 
 def _print_breakdown(data: dict, label: str, top: int) -> None:
     """Human-readable report. Written for a terminal, not for parsing."""
-    print(f"ltc savings ({label})")
+    print(f"smush savings ({label})")
     print(f"  {data['saved_tokens']} tokens saved of {data['original_tokens']} "
           f"({data['reduction']:.0%}) across {data['calls']} commands")
-    # The number that says whether ltc is working at all: everything else can
+    # The number that says whether smush is working at all: everything else can
     # look healthy while most commands quietly fall through to identity.
     print(f"  identity rate: {data['identity_rate']:.0%} "
           f"({data['identity_calls']} of {data['calls']} compressed to nothing)")

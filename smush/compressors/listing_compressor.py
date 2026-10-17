@@ -414,7 +414,7 @@ def _group_dirs(lines: List[str], sentinel: str) -> Tuple[List[str], Optional[Di
     Why this exists: ``_factor_prefix`` above factors ONE prefix shared by
     *every* line, so a listing spanning more than one directory factors nothing
     at all — the common prefix of ``.gitignore`` and
-    ``ltc/compressors/git_compressor.py`` is ``""``. Measured on this repo,
+    ``smush/compressors/git_compressor.py`` is ``""``. Measured on this repo,
     ``git ls-files`` (45 lines of almost entirely redundant paths across 6
     directories) compressed by exactly 0%. Real listings are nearly always
     multi-directory, so that was the common case failing, not an edge case.

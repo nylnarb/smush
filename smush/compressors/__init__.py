@@ -6,5 +6,5 @@ Each compressor module exposes two pure functions:
     decompress(compressed: str, metadata: dict) -> str
 
 and nothing else the core relies on. Compressors never do I/O and never touch
-global state. The core registry in ltc.core wires them to content types.
+global state. The core registry in smush.core wires them to content types.
 """

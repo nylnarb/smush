@@ -32,10 +32,10 @@ edit, it means every `file.py:120` reference it reports is wrong, and every
 Edit it attempts quotes text that is not in the file. That is a correctness
 bug wearing a saved-token costume. So:
 
-  - Source files use `generic_padded` (ltc.compressors.log_compressor),
+  - Source files use `generic_padded` (smush.compressors.log_compressor),
     which refills every dropped block with blank filler lines so the output
     has EXACTLY as many lines as the input -- line N stays line N. Measured
-    against the real corpus (research/, ltc/) this recovers ~76% of the
+    against the real corpus (research/, smush/) this recovers ~76% of the
     unpadded codec's savings while keeping line numbers correct by
     construction. Priced in NEXT_SESSION_PROMPTS.txt PART 4 item B.
   - As a second, independent safety net (belief in the codec's own tests is
@@ -56,14 +56,14 @@ import os
 import datetime
 
 CLAUDE_DIR = os.environ.get(
-    "LTC_CLAUDE_DIR", os.path.join(os.path.expanduser("~"), ".claude")
+    "SMUSH_CLAUDE_DIR", os.path.join(os.path.expanduser("~"), ".claude")
 )
 MODE_FILE = os.path.join(CLAUDE_DIR, ".compress_mode_read")
-LOG = os.path.join(CLAUDE_DIR, "hooks", "ltc-read-compress.log")
+LOG = os.path.join(CLAUDE_DIR, "hooks", "smush-read-compress.log")
 
-LTC_REPO = os.environ.get(
-    "LTC_REPO",
-    os.path.join(os.path.expanduser("~"), "repos", "ln_token_compressor"),
+SMUSH_REPO = os.environ.get(
+    "SMUSH_REPO",
+    os.path.join(os.path.expanduser("~"), "repos", "smush"),
 )
 
 # Below this, the wrapping overhead is a larger share than anything a codec
@@ -145,11 +145,11 @@ def main():
     path = fileobj.get("filePath") or ""
     ext = os.path.splitext(path)[1].lower()
 
-    sys.path.insert(0, LTC_REPO)
+    sys.path.insert(0, SMUSH_REPO)
     try:
-        from ltc import compress_payload
+        from smush import compress_payload
     except Exception as e:
-        passthrough("ltc import failed: %r" % (e,))
+        passthrough("smush import failed: %r" % (e,))
 
     is_source = ext in SOURCE_EXTS
     try:
@@ -190,7 +190,7 @@ def main():
             sys.exit(0)
 
     new_content = result.compressed + (
-        "\n\n[ltc: compressed by `%s`, %d->%d tokens (%.1f%% saved). %s]"
+        "\n\n[smush: compressed by `%s`, %d->%d tokens (%.1f%% saved). %s]"
         % (result.compressor, result.original_tokens, result.compressed_tokens, pct,
            "Line numbers above match " + os.path.basename(path) + " exactly (padded)."
            if is_source else
