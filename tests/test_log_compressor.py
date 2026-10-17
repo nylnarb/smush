@@ -173,5 +173,88 @@ class TestRobustness(unittest.TestCase):
         self.assertEqual(res.compressor, "log")
 
 
+class TestPaddedGeneric(unittest.TestCase):
+    """generic_padded: PART 4 item B. Output must have exactly as many lines
+    as the input (so downstream line-number prefixes stay correct), and must
+    still round-trip byte-for-byte via the ordinary `decompress`.
+    """
+
+    def _line_count(self, text: str) -> int:
+        return text.count("\n") + (0 if text.endswith("\n") or text == "" else 1)
+
+    def _check(self, text: str):
+        res = compress_payload(text, "generic_padded")
+        if text != "":
+            self.assertEqual(res.compressor, "generic_padded")
+        self.assertTrue(res.reversible)
+        self.assertEqual(
+            self._line_count(res.compressed), self._line_count(text),
+            "padded output must preserve the input's line count exactly",
+        )
+        back = decompress(res.compressed, res.metadata)
+        self.assertEqual(back, text)
+        return res
+
+    def test_repeated_lines_preserve_line_count_and_roundtrip(self):
+        self._check(REPEATED)
+
+    def test_traceback_preserves_line_count_and_roundtrips(self):
+        self._check(TRACEBACK)
+
+    def test_long_output_preserves_line_count_and_roundtrips(self):
+        self._check(LONG)
+
+    def test_all_three_transforms_together(self):
+        self._check(TRACEBACK + REPEATED + LONG)
+
+    def test_no_trailing_newline(self):
+        text = "same\nsame\nsame\nsame\ntail"
+        self._check(text)
+
+    def test_padding_still_saves_tokens(self):
+        res = compress_payload(LONG, "generic_padded")
+        self.assertLess(res.compressed_tokens, res.original_tokens)
+
+    def test_padded_smaller_gain_than_unpadded(self):
+        # The filler blanks give back some of the saving relative to the
+        # unpadded generic codec; padded must still be strictly between
+        # identity and the unpadded ceiling.
+        padded = compress_payload(LONG, "generic_padded")
+        unpadded = compress_payload(LONG, "generic")
+        self.assertLess(unpadded.compressed_tokens, padded.compressed_tokens)
+        self.assertLess(padded.compressed_tokens, padded.original_tokens)
+
+    def test_empty_input(self):
+        self._check("")
+
+    def test_run_marker_inside_capped_middle(self):
+        # Regression: _cap_middle stores ALREADY-COLLAPSED lines, so a run
+        # marker landing inside the dropped middle means len(block) counts
+        # compressed lines, not original ones. Padding must weight each
+        # marker by the original line count it stands for.
+        text = "".join("head unique line %d\n" % i for i in range(200))
+        text += "the same line\n" * 300
+        text += "".join("tail unique line %d\n" % i for i in range(200))
+        self._check(text)
+
+    def test_line_positions_match_not_just_count(self):
+        # Total-count equality is not enough; a unique line must sit at the
+        # same index it had in the source.
+        # NEEDLE sits after a collapsed run but within the visible head, so
+        # it survives the middle cap and must land on its original index.
+        text = "".join("u%d\n" % i for i in range(20))
+        text += "dup\n" * 10
+        text += "NEEDLE\n"
+        text += "".join("v%d\n" % i for i in range(150))
+        res = self._check(text)
+        self.assertEqual(
+            res.compressed.split("\n").index("NEEDLE"),
+            text.split("\n").index("NEEDLE"),
+        )
+
+    def test_no_op_text_roundtrips(self):
+        self._check("a single unremarkable line\nand another\n")
+
+
 if __name__ == "__main__":
     unittest.main()

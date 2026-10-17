@@ -32,10 +32,18 @@ edit, it means every `file.py:120` reference it reports is wrong, and every
 Edit it attempts quotes text that is not in the file. That is a correctness
 bug wearing a saved-token costume. So:
 
-  - Source files are SKIPPED, and merely shadow-measured (compressed, the
-    saving recorded, the result thrown away). That gives an honest ceiling for
-    what full coverage would be worth without betting an edit on it.
-  - Non-source files are compressed for real.
+  - Source files use `generic_padded` (ltc.compressors.log_compressor),
+    which refills every dropped block with blank filler lines so the output
+    has EXACTLY as many lines as the input -- line N stays line N. Measured
+    against the real corpus (research/, ltc/) this recovers ~76% of the
+    unpadded codec's savings while keeping line numbers correct by
+    construction. Priced in NEXT_SESSION_PROMPTS.txt PART 4 item B.
+  - As a second, independent safety net (belief in the codec's own tests is
+    not enough for something this correctness-sensitive), the line count of
+    the padded output is re-checked here, in the hook, before it is ever
+    applied. Any mismatch refuses and falls back to shadow-measurement.
+  - Non-source files use the unpadded `generic` codec via "auto", since they
+    are not quoted back by line number.
   - Lossy results are refused outright regardless of file type. Losing a line
     of a file the model is reasoning about is never a good trade here.
 
@@ -143,12 +151,17 @@ def main():
     except Exception as e:
         passthrough("ltc import failed: %r" % (e,))
 
+    is_source = ext in SOURCE_EXTS
     try:
         # No command hint on purpose. Every command-aware codec fails closed
         # without one, which is exactly the behaviour wanted here: routing is
         # allowed to pick a codec, nothing is allowed to decide a line is
-        # unwanted.
-        result = compress_payload(content, content_type="auto")
+        # unwanted. Source/markdown always route to the padded codec
+        # explicitly -- "auto" only ever sniffs its way to the unpadded one.
+        result = compress_payload(
+            content,
+            content_type="generic_padded" if is_source else "auto",
+        )
     except Exception as e:
         passthrough("compress raised: %r" % (e,))
 
@@ -165,19 +178,24 @@ def main():
     if saved <= 0:
         passthrough("no gain | " + tag)
 
-    if ext in SOURCE_EXTS:
-        # Shadow measurement: what full coverage would have been worth, with
-        # none of the risk. Nothing is emitted, so the model sees the file
-        # exactly as it is on disk.
-        log("SHADOW (source, not applied) | " + tag)
-        sys.exit(0)
+    if is_source:
+        # Second, independent check that padding actually preserved the line
+        # count -- belief in the codec's own unit tests is not enough for
+        # something this correctness-sensitive. Any mismatch falls back to
+        # shadow-measurement rather than risk a wrong line number.
+        orig_lines = content.count("\n") + (0 if content.endswith("\n") else 1)
+        new_lines = result.compressed.count("\n") + (0 if result.compressed.endswith("\n") else 1)
+        if new_lines != orig_lines:
+            log("SHADOW (source, padding check failed %d!=%d) | %s" % (new_lines, orig_lines, tag))
+            sys.exit(0)
 
     new_content = result.compressed + (
-        "\n\n[ltc: compressed by `%s`, %d->%d tokens (%.1f%% saved). "
-        "Line numbers above are positions in this compressed text, NOT in "
-        "%s. Re-read with a limit/offset if you need true line numbers.]"
-        % (result.compressor, result.original_tokens,
-           result.compressed_tokens, pct, os.path.basename(path))
+        "\n\n[ltc: compressed by `%s`, %d->%d tokens (%.1f%% saved). %s]"
+        % (result.compressor, result.original_tokens, result.compressed_tokens, pct,
+           "Line numbers above match " + os.path.basename(path) + " exactly (padded)."
+           if is_source else
+           "Line numbers above are positions in this compressed text, NOT in "
+           + os.path.basename(path) + ". Re-read with a limit/offset if you need true line numbers.")
     )
 
     # Mutate the observed object rather than rebuilding it. The replacement is

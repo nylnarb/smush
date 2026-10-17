@@ -29,13 +29,15 @@ _REGISTRY: Dict[str, Tuple[Callable[[str], CompressResult],
     log_compressor.NAME: (log_compressor.compress, log_compressor.decompress),
     log_compressor.GENERIC_NAME: (log_compressor.compress_generic,
                                   log_compressor.decompress),
+    log_compressor.PADDED_GENERIC_NAME: (log_compressor.compress_generic_padded,
+                                         log_compressor.decompress),
     listing_compressor.NAME: (listing_compressor.compress, listing_compressor.decompress),
     pytest_compressor.NAME: (pytest_compressor.compress, pytest_compressor.decompress),
     git_compressor.NAME: (git_compressor.compress, git_compressor.decompress),
 }
 
 # Content types a caller may request. "auto" sniffs; others map to a compressor.
-SUPPORTED_TYPES = ("auto", "json", "log", "listing", "generic", "pytest", "git")
+SUPPORTED_TYPES = ("auto", "json", "log", "listing", "generic", "generic_padded", "pytest", "git")
 
 # Compressors that want the originating command itself, not just the content
 # type derived from it. Two do, for the same reason in different clothes: the

@@ -51,6 +51,14 @@ NAME = "log"
 # command output, where digit-masked run collapsing is unsafe (a numeric
 # table would collapse to a single row). See `compress_generic`.
 GENERIC_NAME = "generic"
+# Line-count-preserving variant of the generic codec. Every dropped block is
+# refilled with blank filler lines so the OUTPUT has exactly as many lines as
+# the INPUT — line N of the compressed text is line N of the source file, even
+# though Claude Code applies its `N->` prefixes downstream of this codec. See
+# PART 4 item B / PART 5 item 6 in NEXT_SESSION_PROMPTS.txt. Still fully
+# reversible: the filler lines are stripped before the normal ops-based
+# decompress runs.
+PADDED_GENERIC_NAME = "generic_padded"
 VERSION = 1
 
 # --- tuning knobs -----------------------------------------------------------
@@ -237,6 +245,76 @@ def _cap_middle(lines: List[str], sentinel: str) -> Tuple[List[str], Optional[Di
     return head + [marker] + tail, op
 
 
+# --- line-count-preserving padding -------------------------------------------
+def _marker_regex(sentinel: str, ops: List[Dict[str, Any]]) -> Optional[re.Pattern]:
+    """One regex matching any op's marker, tag captured, or None if no ops."""
+    tags = [op["tag"] for op in ops]
+    if not tags:
+        return None
+    alts = "|".join(re.escape(t) for t in tags)
+    return re.compile(re.escape(sentinel) + r"(" + alts + r")(\d+)")
+
+
+def _marker_weights(sentinel: str, ops: List[Dict[str, Any]]) -> Dict[Tuple[str, str], int]:
+    """Map each marker (tag, id) to the number of ORIGINAL lines it stands for.
+
+    Transforms apply in sequence, so a later op's stored block can itself
+    contain earlier ops' markers (e.g. the head/tail cap drops a middle that
+    already holds run-collapse markers). ``len(block)`` therefore counts
+    *compressed* lines; the true weight needs the block expanded back through
+    every earlier op first.
+    """
+    weights: Dict[Tuple[str, str], int] = {}
+    for k, op in enumerate(ops):
+        for key, block in op["restore"].items():
+            expanded = block
+            for earlier in reversed(ops[:k]):
+                expanded = _expand(expanded, sentinel, earlier)
+            weights[(op["tag"], key)] = len(expanded)
+    return weights
+
+
+def _pad_for_output(lines: List[str], sentinel: str, ops: List[Dict[str, Any]]) -> List[str]:
+    """Refill each visible marker line with blank lines so the total line
+    count equals the pre-compression count. The marker line itself counts as
+    one of the lines it replaced, so ``weight - 1`` blank lines follow it.
+    """
+    rx = _marker_regex(sentinel, ops)
+    if rx is None:
+        return lines
+    weights = _marker_weights(sentinel, ops)
+    out: List[str] = []
+    for ln in lines:
+        m = rx.search(ln)
+        weight = weights.get((m.group(1), m.group(2))) if m else None
+        out.append(ln)
+        if weight is not None:
+            out.extend(["\n"] * (weight - 1))
+    return out
+
+
+def _unpad_from_output(lines: List[str], sentinel: str, ops: List[Dict[str, Any]]) -> List[str]:
+    """Inverse of `_pad_for_output`: drop the blank filler lines that follow
+    each marker, restoring the pre-padding (ordinary compressed) line list.
+    """
+    rx = _marker_regex(sentinel, ops)
+    if rx is None:
+        return lines
+    weights = _marker_weights(sentinel, ops)
+    out: List[str] = []
+    i = 0
+    n = len(lines)
+    while i < n:
+        ln = lines[i]
+        m = rx.search(ln)
+        weight = weights.get((m.group(1), m.group(2))) if m else None
+        out.append(ln)
+        i += 1
+        if weight is not None:
+            i += weight - 1  # skip the filler blanks, not the next real line
+    return out
+
+
 # --- public API -------------------------------------------------------------
 def _identity_result(text: str, reason: str) -> CompressResult:
     n = estimate_tokens(text)
@@ -250,8 +328,9 @@ def _identity_result(text: str, reason: str) -> CompressResult:
     )
 
 
-def _compress(text: str, mask_digits: bool, name: str) -> CompressResult:
-    """Shared implementation behind `compress` and `compress_generic`."""
+def _compress(text: str, mask_digits: bool, name: str, pad_lines: bool = False) -> CompressResult:
+    """Shared implementation behind `compress`, `compress_generic`, and
+    `compress_generic_padded`."""
     if text == "":
         return _identity_result(text, "empty input")
 
@@ -270,12 +349,16 @@ def _compress(text: str, mask_digits: bool, name: str) -> CompressResult:
         if op is not None:
             ops.append(op)
 
+    if pad_lines:
+        lines = _pad_for_output(lines, sentinel, ops)
+
     compressed = "".join(lines)
     metadata: Dict[str, Any] = {
         "compressor": name,
         "version": VERSION,
         "sentinel": sentinel,
         "ops": ops,
+        "padded": pad_lines,
     }
     return CompressResult(
         compressed=compressed,
@@ -303,6 +386,17 @@ def compress_generic(text: str) -> CompressResult:
     return _compress(text, mask_digits=False, name=GENERIC_NAME)
 
 
+def compress_generic_padded(text: str) -> CompressResult:
+    """`compress_generic`, but the output has exactly as many lines as the
+    input. Every dropped block is refilled with blank lines after its marker,
+    so line N of the output is line N of the source — safe for files Claude
+    Code will later quote back by line number (source, markdown). Still
+    exactly reversible; the filler is stripped before the ordinary ops-based
+    decompress runs. See PADDED_GENERIC_NAME.
+    """
+    return _compress(text, mask_digits=False, name=PADDED_GENERIC_NAME, pad_lines=True)
+
+
 def _expand(lines: List[str], sentinel: str, op: Dict[str, Any]) -> List[str]:
     """Reverse one op: replace each of its marker lines with the stored block."""
     tag: str = op["tag"]
@@ -319,12 +413,15 @@ def _expand(lines: List[str], sentinel: str, op: Dict[str, Any]) -> List[str]:
 
 
 def decompress(compressed: str, metadata: Dict[str, Any]) -> str:
-    """Reverse ``compress``, reproducing the original text exactly."""
+    """Reverse ``compress`` (or ``compress_generic_padded``), reproducing the
+    original text exactly."""
     if metadata.get("compressor") == "identity":
         return compressed
     sentinel: str = metadata["sentinel"]
     ops: List[Dict[str, Any]] = metadata.get("ops", [])
     lines = _split_keep(compressed)
+    if metadata.get("padded"):
+        lines = _unpad_from_output(lines, sentinel, ops)
     for op in reversed(ops):
         lines = _expand(lines, sentinel, op)
     return "".join(lines)
